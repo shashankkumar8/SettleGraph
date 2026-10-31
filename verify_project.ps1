@@ -25,16 +25,23 @@ try {
 finally { Pop-Location }
 
 $viteCommand = Join-Path $frontend 'node_modules\.bin\vite.cmd'
+$frontendBuildVerified = $false
 if (Test-Path $viteCommand) {
     Write-Host '=== Frontend type-check and production build ===' -ForegroundColor Cyan
     Push-Location $frontend
     try {
         npm run build
         if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
+        $frontendBuildVerified = $true
     }
     finally { Pop-Location }
 } else {
     Write-Warning 'Frontend dependencies are not installed. Run .\start_frontend.ps1, then rerun this verification script.'
 }
 
-Write-Host 'Verification steps completed.' -ForegroundColor Green
+if ($frontendBuildVerified) {
+    Write-Host 'ALL CHECKS PASSED: backend tests + frontend type-check + production build.' -ForegroundColor Green
+} else {
+    Write-Warning 'BACKEND CHECKS PASSED, BUT PROJECT VERIFICATION IS INCOMPLETE: frontend build was skipped.'
+    exit 2
+}

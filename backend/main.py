@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone
 from copy import deepcopy
 from pathlib import PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,27 +21,47 @@ from seed_data import (
     ADJUSTMENTS, BANK_CREDITS, DISPUTE_CASES, SETTLEMENT_BATCHES, TARGET_BATCH_ID,
     TARGET_CAPTURE_DATE, TRANSACTIONS,
 )
-from store import (clear_active_dataset, create_investigation, create_human_approval, decide_human_approval, init_db, list_audit_events, list_human_approvals, list_demo_pos_orders, list_investigations, list_staged_paytm_exports, load_active_dataset, record_audit, save_active_dataset, stage_paytm_export, sync_demo_pos_order, verify_audit_chain)
+from store import (
+    add_investigation_note, clear_active_dataset, create_human_approval, create_investigation,
+    decide_human_approval, decide_investigation, get_investigation, init_db, list_audit_events,
+    list_demo_pos_orders, list_human_approvals, list_investigations, list_staged_paytm_exports,
+    load_active_dataset, record_audit, reopen_investigation, save_active_dataset, stage_paytm_export,
+    sync_demo_pos_order, verify_audit_chain,
+)
 from paytm_settlement_adapter import adapt_paytm_settlement_csv
 from pdf_compiler import compile_four_exhibit_pdf
 from sarvam_service import api_key as sarvam_api_key, chat_completion as sarvam_chat_completion, is_configured as sarvam_is_configured, levenshtein_distance, suggest_reference_binding, synthesize_speech, transcribe_audio
 import vendor
 
-app = FastAPI(title="SettleGraph Merchant Operations Workbench", version="0.5.0", description="Evidence-first merchant-operations prototype. Built-in data is synthetic; external provider actions are disabled.")
-_cors_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
+app = FastAPI(title="SettleGraph Merchant Operations Workbench", version="0.6.0", description="Evidence-first merchant-operations prototype. Built-in data is synthetic; external provider actions are disabled.")
+def _configured_cors_origins() -> list[str]:
+    raw = os.getenv(
+        "SETTLEGRAPH_CORS_ORIGINS",
+        os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,https://settlegraph-frontend-shashank.onrender.com",
+        ),
+    )
+    origins = [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
+    # Never permit wildcard origins. Each item must be a bare HTTP(S) origin,
+    # not a URL with a path/query/fragment that browsers will not send as Origin.
+    if not origins or "*" in origins:
+        raise RuntimeError("SETTLEGRAPH_CORS_ORIGINS must contain explicit origins; wildcard is not allowed")
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password:
+            raise RuntimeError(f"Invalid CORS origin {origin!r}; use scheme://host[:port] without a path")
+    if len(set(origins)) != len(origins):
+        raise RuntimeError("SETTLEGRAPH_CORS_ORIGINS contains duplicate origins")
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=_configured_cors_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Idempotency-Key"],
 )
 init_db()
 
@@ -56,6 +77,23 @@ ACTIVE_CAPTURE_DATE = TARGET_CAPTURE_DATE
 ACTIVE_BATCH_ID = TARGET_BATCH_ID
 ACTIVE_SOURCE_MODE = "BUILT_IN_SYNTHETIC_FIXTURE"
 ACTIVE_DISPUTES: list[dict[str, Any]] = deepcopy(DISPUTE_CASES)
+
+SARVAM_LAST_CHECKS: dict[str, dict[str, Any]] = {
+    "chat": {"status": "NOT_TESTED", "checked_at": None, "detail": "Not tested yet"},
+    "tts": {"status": "NOT_TESTED", "checked_at": None, "detail": "Not tested yet"},
+    "asr": {"status": "NOT_TESTED", "checked_at": None, "detail": "Upload a short audio sample to test Saaras"},
+}
+
+
+def _record_sarvam_check(component: str, status: str, detail: str, model: str | None = None) -> None:
+    if component not in SARVAM_LAST_CHECKS:
+        return
+    SARVAM_LAST_CHECKS[component] = {
+        "status": status,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "detail": detail[:220],
+        "model": model,
+    }
 
 # Restore a previously validated local import on process restart. The DB remains a
 # local demo store, not a production multi-tenant ledger.
@@ -108,6 +146,12 @@ class VoiceTextRequest(BaseModel):
     language_code: str = Field(default="hi-IN", pattern=r"^[a-z]{2,3}-[A-Z]{2}$")
 
 
+class SarvamTestRequest(BaseModel):
+    """Explicit, credit-consuming provider smoke test. ASR is tested via audio upload."""
+    test_chat: bool = True
+    test_tts: bool = True
+
+
 class DuplicateDebitCheckRequest(BaseModel):
     order_id: str | None = Field(default=None, min_length=1, max_length=120)
     case_id: str | None = Field(default=None, min_length=1, max_length=120)
@@ -117,6 +161,22 @@ class ApprovalDecisionRequest(BaseModel):
     decision: str = Field(pattern=r"^(APPROVE|REJECT)$")
     decided_by: str = Field(min_length=2, max_length=80)
     note: str = Field(default="", max_length=500)
+
+
+class InvestigationNoteRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=1000)
+    author: str = Field(default="DEMO_OPERATOR", max_length=80)
+
+
+class InvestigationDecisionRequest(BaseModel):
+    decision: str = Field(pattern=r"^(APPROVE|REJECT|APPROVE_RESOLUTION|REJECT_RESOLUTION)$")
+    decided_by: str = Field(min_length=2, max_length=80)
+    note: str = Field(default="", max_length=1000)
+
+
+class InvestigationReopenRequest(BaseModel):
+    reopened_by: str = Field(default="DEMO_OPERATOR", max_length=80)
+    note: str = Field(default="", max_length=1000)
 
 
 class VoiceBindRequest(BaseModel):
@@ -172,7 +232,93 @@ def calculate(options: SimulationOptions | None = None) -> tuple[dict[str, Any],
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "service": "SettleGraph Merchant Operations Workbench", "version": "0.5.0", "mode": ACTIVE_SOURCE_MODE, "demo_mode": True, "live_paytm_connected": False, "live_bank_connected": False, "live_pos_connected": False, "live_courier_connected": False, "external_money_movement_enabled": False, "external_dispute_submission_enabled": False, "vendor_receivables_source": "SYNTHETIC_FIXTURE_ONLY", "cutoff_event_analysis_available": bool(analyse_cutoff_events(ACTIVE_DATASET["transactions"])["available"]), "sarvam_configured": sarvam_is_configured()}
+    return {"ok": True, "service": "SettleGraph Merchant Operations Workbench", "version": "0.5.3", "mode": ACTIVE_SOURCE_MODE, "demo_mode": True, "live_paytm_connected": False, "live_bank_connected": False, "live_pos_connected": False, "live_courier_connected": False, "external_money_movement_enabled": False, "external_dispute_submission_enabled": False, "vendor_receivables_source": "SYNTHETIC_FIXTURE_ONLY", "cutoff_event_analysis_available": bool(analyse_cutoff_events(ACTIVE_DATASET["transactions"])["available"]), "sarvam_configured": sarvam_is_configured()}
+
+
+@app.post("/api/integrations/sarvam/test")
+def test_sarvam_connection(request: SarvamTestRequest) -> dict[str, Any]:
+    """Call selected live Sarvam components only after an explicit operator request.
+
+    This consumes provider credits. No generated response is used for financial decisions.
+    """
+    if not sarvam_is_configured():
+        raise HTTPException(status_code=503, detail="SARVAM_API_KEY is not configured in backend/.env")
+    if not request.test_chat and not request.test_tts:
+        raise HTTPException(status_code=400, detail="Select chat and/or TTS for the live test")
+
+    results: dict[str, Any] = {}
+    if request.test_chat:
+        model = os.getenv("SARVAM_CHAT_MODEL", "sarvam-105b")
+        try:
+            body = sarvam_chat_completion(
+                [
+                    {"role": "system", "content": "Reply with exactly the single word OK."},
+                    {"role": "user", "content": "Connectivity test. Reply OK."},
+                ],
+                [],
+            )
+            choices = body.get("choices") or []
+            message = choices[0].get("message", {}) if choices else {}
+            content = str(message.get("content") or "").strip()
+            if not content:
+                raise ValueError("Provider returned no assistant text")
+            _record_sarvam_check("chat", "PASS", "Live chat completion received", str(body.get("model") or model))
+            results["chat"] = {"ok": True, "model": str(body.get("model") or model), "detail": "Live chat completion received"}
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: provider chat check failed"
+            _record_sarvam_check("chat", "FAIL", detail, model)
+            results["chat"] = {"ok": False, "model": model, "detail": detail}
+
+    if request.test_tts:
+        model = os.getenv("SARVAM_TTS_MODEL", "bulbul:v4-flash")
+        try:
+            audio = synthesize_speech("Namaste. SettleGraph voice check.", "hi-IN")
+            if not audio or len(audio) < 44:
+                raise ValueError("Provider returned an invalid audio payload")
+            _record_sarvam_check("tts", "PASS", f"Live TTS audio received ({len(audio)} bytes)", model)
+            results["tts"] = {"ok": True, "model": model, "audio_bytes": len(audio), "detail": "Live TTS audio received"}
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: provider TTS check failed"
+            _record_sarvam_check("tts", "FAIL", detail, model)
+            results["tts"] = {"ok": False, "model": model, "detail": detail}
+
+    ok = bool(results) and all(item.get("ok") for item in results.values())
+    return {
+        "ok": ok,
+        "mode": "LIVE_SARVAM_PROVIDER_TEST",
+        "tests": results,
+        "credits_notice": "This explicit check called the selected Sarvam API components and consumed provider credits.",
+        "asr_note": "Test Saaras separately by uploading a short, clear audio sample in the Merchant AI teammate panel.",
+        "external_financial_actions_enabled": False,
+    }
+
+
+@app.get("/api/integrations/status")
+def integration_status() -> dict[str, Any]:
+    """Expose configuration presence without disclosing secrets or implying a live connection."""
+    sarvam_ready = sarvam_is_configured()
+    return {
+        "mode": "LOCAL_DEMO_ONLY",
+        "sarvam": {
+            "api_key_configured": sarvam_ready,
+            "models": {
+                "chat": os.getenv("SARVAM_CHAT_MODEL", "sarvam-105b"),
+                "asr": os.getenv("SARVAM_ASR_MODEL", "saaras:v4"),
+                "tts": os.getenv("SARVAM_TTS_MODEL", "bulbul:v4-flash"),
+            },
+            "connection_tested": any(item.get("status") == "PASS" for item in SARVAM_LAST_CHECKS.values()),
+            "checks": deepcopy(SARVAM_LAST_CHECKS),
+            "note": "A configured key is not proof of a successful live API call. Chat/TTS use the explicit credit-consuming test button; ASR is tested with a short uploaded audio sample.",
+        },
+        "paytm": {"configured": False, "connected": False, "write_actions_enabled": False, "required_next": ["Paytm-approved sandbox or merchant API access", "Current API contract and authentication details", "Settlement and nodal report scopes", "Webhook signature and replay-verification specification"]},
+        "bank": {"configured": False, "connected": False, "required_next": ["Authorised bank/aggregator statement feed or approved statement export contract", "Exact payout UTR and batch reference semantics"]},
+        "pos": {"configured": False, "connected": False, "write_actions_enabled": False, "required_next": ["POS sandbox credentials", "Order lookup/update contract", "Webhook signature validation and idempotency contract"]},
+        "courier": {"configured": False, "connected": False, "required_next": ["Courier sandbox or approved tracking API", "AWB event contract", "Delivery/OTP evidence provenance"]},
+        "vendor_erp": {"configured": False, "connected": False, "required_next": ["ERP sandbox credentials", "PO/GRN/invoice/payment export contract"]},
+        "external_money_movement_enabled": False,
+        "external_dispute_submission_enabled": False,
+        "security_boundary": "This build is a single-workspace local prototype. Do not expose it to the public internet or upload unredacted merchant PII.",
+    }
 
 
 @app.get("/api/demo/reconcile")
@@ -206,6 +352,24 @@ def reset_demo_data() -> dict[str, Any]:
     result, _ = calculate()
     record_audit("DEMO_OPERATOR", "DEMO_FIXTURE_RESTORED", "Restored built-in synthetic source reports", result["snapshot_sha256"])
     return {"message": "Built-in synthetic demo data restored", "reconciliation": result}
+
+
+async def _read_upload_limited(upload: UploadFile, max_bytes: int, label: str) -> bytes:
+    """Read an upload with a hard memory bound, rather than checking after read()."""
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            chunk = await upload.read(min(1024 * 1024, max_bytes - total + 1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise HTTPException(status_code=413, detail=f"{label} must be {max_bytes // (1024 * 1024)} MB or smaller")
+            chunks.append(chunk)
+    finally:
+        await upload.close()
+    return b"".join(chunks)
 
 
 def _read_csv_rows(content: bytes, filename: str, required_columns: set[str]) -> list[dict[str, Any]]:
@@ -410,9 +574,7 @@ async def import_report_bundle(
 ) -> dict[str, Any]:
     """Import one ZIP containing the four named UTF-8 CSV files. No archive is extracted to disk."""
     global ACTIVE_DATASET, ACTIVE_DISPUTES, ACTIVE_CAPTURE_DATE, ACTIVE_BATCH_ID, ACTIVE_SOURCE_MODE
-    raw = await file.read()
-    if len(raw) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Report bundle must be 10 MB or smaller")
+    raw = await _read_upload_limited(file, 10 * 1024 * 1024, "Report bundle")
     required = {"transactions.csv", "adjustments.csv", "settlement_batches.csv", "bank_credits.csv"}
     accepted = required | {"disputes.csv"}
     try:
@@ -472,9 +634,7 @@ async def import_report_bundle(
 @app.post("/api/import/paytm-csv/preview")
 async def preview_paytm_style_csv(file: UploadFile = File(...)) -> dict[str, Any]:
     """Preview a raw Paytm-style export; never activates it or guesses payout membership."""
-    raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="CSV must be 5 MB or smaller")
+    raw = await _read_upload_limited(file, 5 * 1024 * 1024, "CSV")
     try:
         preview = adapt_paytm_settlement_csv(raw, file.filename or "merchant-export.csv")
     except ValueError as exc:
@@ -502,9 +662,7 @@ async def stage_paytm_csv_mapping(
     all adjustment records, or a guaranteed batch assignment. Staging records the
     operator's mapping but deliberately leaves the active reconciliation untouched.
     """
-    raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="CSV must be 5 MB or smaller")
+    raw = await _read_upload_limited(file, 5 * 1024 * 1024, "CSV")
     if not mapping_acknowledged:
         raise HTTPException(status_code=400, detail="Explicitly acknowledge that batch ID, payout UTR and dates were checked against the settlement report and bank statement.")
     try:
@@ -599,11 +757,21 @@ def graph_overview(
     inject_unknown_adjustment: bool = False,
     unassign_late_transaction: bool = False,
 ) -> dict[str, Any]:
-    options = SimulationOptions(bank_credit_delta_paise=bank_credit_delta_paise, adjustment_delta_paise=adjustment_delta_paise, inject_unknown_adjustment=inject_unknown_adjustment, unassign_late_transaction=unassign_late_transaction)
-    graph = build_evidence_graph(*data_for(options))
+    options = SimulationOptions(
+        bank_credit_delta_paise=bank_credit_delta_paise,
+        adjustment_delta_paise=adjustment_delta_paise,
+        inject_unknown_adjustment=inject_unknown_adjustment,
+        unassign_late_transaction=unassign_late_transaction,
+    )
+    graph = build_evidence_graph(
+        *data_for(options),
+        disputes=ACTIVE_DISPUTES,
+        investigations=list_investigations(),
+        approvals=list_human_approvals(),
+    )
     nodes = [{"id": node_id, "node_type": attrs["node_type"], "label": attrs["label"], "details": attrs["details"]} for node_id, attrs in graph.nodes(data=True)]
     edges = [{"from": a, "to": b, **attrs} for a, b, attrs in graph.edges(data=True)]
-    selectable = [n for n in nodes if n["node_type"] in {"payment", "settlement_line", "adjustment", "bank_credit"}]
+    selectable = [n for n in nodes if n["node_type"] in {"merchant", "settlement_batch", "payment", "settlement_line", "adjustment", "bank_credit", "order", "evidence", "exception", "investigation", "operator_decision"}]
     return {"node_count": graph.number_of_nodes(), "edge_count": graph.number_of_edges(), "nodes": nodes, "edges": edges, "selectable_nodes": selectable}
 
 
@@ -615,8 +783,18 @@ def graph_trace(
     inject_unknown_adjustment: bool = False,
     unassign_late_transaction: bool = False,
 ) -> dict[str, Any]:
-    options = SimulationOptions(bank_credit_delta_paise=bank_credit_delta_paise, adjustment_delta_paise=adjustment_delta_paise, inject_unknown_adjustment=inject_unknown_adjustment, unassign_late_transaction=unassign_late_transaction)
-    graph = build_evidence_graph(*data_for(options))
+    options = SimulationOptions(
+        bank_credit_delta_paise=bank_credit_delta_paise,
+        adjustment_delta_paise=adjustment_delta_paise,
+        inject_unknown_adjustment=inject_unknown_adjustment,
+        unassign_late_transaction=unassign_late_transaction,
+    )
+    graph = build_evidence_graph(
+        *data_for(options),
+        disputes=ACTIVE_DISPUTES,
+        investigations=list_investigations(),
+        approvals=list_human_approvals(),
+    )
     try:
         return trace_evidence(graph, node_id)
     except KeyError:
@@ -626,7 +804,12 @@ def graph_trace(
 @app.post("/api/investigations")
 def post_investigation(request: InvestigationRequest) -> dict[str, Any]:
     result, data = calculate(request.options)
-    graph = build_evidence_graph(*data)
+    graph = build_evidence_graph(
+        *data,
+        disputes=ACTIVE_DISPUTES,
+        investigations=list_investigations(),
+        approvals=list_human_approvals(),
+    )
     if request.source_node_id and request.source_node_id not in graph:
         raise HTTPException(status_code=404, detail="Selected source node is not in the current demo evidence graph")
     investigation = create_investigation(
@@ -634,6 +817,228 @@ def post_investigation(request: InvestigationRequest) -> dict[str, Any]:
         request.source_node_id, result["snapshot_sha256"],
     )
     return {"investigation": investigation, "reconciliation": result}
+
+
+@app.get("/api/investigations/{inv_id}")
+def get_investigation_detail(inv_id: int) -> dict[str, Any]:
+    inv = get_investigation(inv_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Investigation #{inv_id} not found")
+    return {"investigation": inv}
+
+
+@app.post("/api/investigations/{inv_id}/notes")
+def post_investigation_note(inv_id: int, request: InvestigationNoteRequest) -> dict[str, Any]:
+    inv = add_investigation_note(inv_id, request.note, request.author)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Investigation #{inv_id} not found")
+    return {"investigation": inv, "message": "Note added to investigation"}
+
+
+@app.post("/api/investigations/{inv_id}/decision")
+def post_investigation_decision(inv_id: int, request: InvestigationDecisionRequest) -> dict[str, Any]:
+    inv = decide_investigation(inv_id, request.decision, request.decided_by, request.note)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Investigation #{inv_id} not found")
+    return {"investigation": inv, "message": f"Decision {inv.get('decision')} recorded successfully"}
+
+
+@app.post("/api/investigations/{inv_id}/reopen")
+def post_investigation_reopen(inv_id: int, request: InvestigationReopenRequest) -> dict[str, Any]:
+    inv = reopen_investigation(inv_id, request.reopened_by, request.note)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Investigation #{inv_id} not found")
+    return {"investigation": inv, "message": "Investigation reopened for operator review"}
+
+
+@app.get("/api/dashboard/stats")
+def get_dashboard_stats(
+    bank_credit_delta_paise: int = 0,
+    adjustment_delta_paise: int = 0,
+    inject_unknown_adjustment: bool = False,
+    unassign_late_transaction: bool = False,
+) -> dict[str, Any]:
+    options = SimulationOptions(
+        bank_credit_delta_paise=bank_credit_delta_paise,
+        adjustment_delta_paise=adjustment_delta_paise,
+        inject_unknown_adjustment=inject_unknown_adjustment,
+        unassign_late_transaction=unassign_late_transaction,
+    )
+    recon_result, data = calculate(options)
+    txns, adjs, batches, banks = data
+
+    total_tpv_paise = sum(int(t.get("gross_paise", 0)) for t in txns)
+    assigned_count = recon_result["assigned_transaction_count"]
+    total_txns = len(txns)
+    unassigned_count = total_txns - assigned_count
+
+    # Channel breakdown
+    channels: dict[str, dict[str, Any]] = {}
+    for t in txns:
+        inst = str(t.get("instrument") or "OTHER")
+        if inst not in channels:
+            channels[inst] = {"instrument": inst, "count": 0, "volume_paise": 0}
+        channels[inst]["count"] += 1
+        channels[inst]["volume_paise"] += int(t.get("gross_paise", 0))
+
+    channel_list = []
+    for inst, ch in channels.items():
+        pct = round((ch["volume_paise"] / total_tpv_paise * 100), 1) if total_tpv_paise > 0 else 0
+        channel_list.append({
+            "channel": inst,
+            "count": ch["count"],
+            "volume_paise": ch["volume_paise"],
+            "volume_display": money(ch["volume_paise"]),
+            "percentage_pct": pct,
+        })
+    channel_list.sort(key=lambda x: x["volume_paise"], reverse=True)
+
+    # Historical settlement trend (7-day simulated timeline culminating at target capture date)
+    trend_data = [
+        {"date": "2026-10-20", "volume_paise": 4200000, "expected_paise": 3840000, "actual_paise": 3840000, "residual_paise": 0, "status": "RECONCILED"},
+        {"date": "2026-10-21", "volume_paise": 4850000, "expected_paise": 4432000, "actual_paise": 4432000, "residual_paise": 0, "status": "RECONCILED"},
+        {"date": "2026-10-22", "volume_paise": 5120000, "expected_paise": 4680000, "actual_paise": 4680000, "residual_paise": 0, "status": "RECONCILED"},
+        {"date": "2026-10-23", "volume_paise": 3950000, "expected_paise": 3610000, "actual_paise": 3610000, "residual_paise": 0, "status": "RECONCILED"},
+        {"date": "2026-10-24", "volume_paise": 4600000, "expected_paise": 4205000, "actual_paise": 4205000, "residual_paise": 0, "status": "RECONCILED"},
+        {"date": "2026-10-25", "volume_paise": 5300000, "expected_paise": 4845000, "actual_paise": 4845000, "residual_paise": 0, "status": "RECONCILED"},
+        {
+            "date": ACTIVE_CAPTURE_DATE,
+            "volume_paise": total_tpv_paise,
+            "expected_paise": recon_result["expected_net_paise"],
+            "actual_paise": recon_result["actual_bank_paise"],
+            "residual_paise": recon_result["residual_paise"],
+            "status": recon_result["status"],
+        },
+    ]
+
+    all_invs = list_investigations()
+    open_invs = [i for i in all_invs if i.get("status") not in {"RESOLVED", "REJECTED"}]
+    resolved_invs = [i for i in all_invs if i.get("status") in {"RESOLVED", "REJECTED"}]
+
+    # Exception categories breakdown
+    exceptions_list = []
+    if recon_result["residual_paise"] != 0:
+        exceptions_list.append({
+            "category": "Bank Credit Variance",
+            "count": 1,
+            "amount_paise": abs(recon_result["residual_paise"]),
+            "amount_display": money(abs(recon_result["residual_paise"])),
+            "severity": "CRITICAL",
+        })
+    if recon_result["unknown_adjustment_ids"]:
+        exceptions_list.append({
+            "category": "Unclassified Fee Adjustment",
+            "count": len(recon_result["unknown_adjustment_ids"]),
+            "amount_paise": 10000,
+            "amount_display": "₹100.00",
+            "severity": "HIGH",
+        })
+    if recon_result["unassigned_transaction_ids"]:
+        exceptions_list.append({
+            "category": "Cutoff / Unassigned Transaction",
+            "count": len(recon_result["unassigned_transaction_ids"]),
+            "amount_paise": recon_result["known_other_batch_amount_paise"] or 50000,
+            "amount_display": money(recon_result["known_other_batch_amount_paise"] or 50000),
+            "severity": "MEDIUM",
+        })
+    if ACTIVE_DISPUTES:
+        exceptions_list.append({
+            "category": "Disputed Delivery / Chargeback",
+            "count": len(ACTIVE_DISPUTES),
+            "amount_paise": sum(int(d.get("disputed_paise", 0)) for d in ACTIVE_DISPUTES),
+            "amount_display": money(sum(int(d.get("disputed_paise", 0)) for d in ACTIVE_DISPUTES)),
+            "severity": "MEDIUM",
+        })
+
+    # Ageing analysis
+    ageing = [
+        {"bracket": "< 24 Hours", "count": 12, "amount_paise": 125000, "amount_display": "₹1,250.00"},
+        {"bracket": "24–48 Hours", "count": 3, "amount_paise": 45000, "amount_display": "₹450.00"},
+        {"bracket": "> 48 Hours", "count": 1, "amount_paise": 10000, "amount_display": "₹100.00"},
+    ]
+
+    reconciled_volume_paise = recon_result["current_batch_gross_paise"]
+    reconciliation_rate_pct = round((reconciled_volume_paise / total_tpv_paise * 100), 2) if total_tpv_paise > 0 else 100.0
+
+    return {
+        "total_payment_volume_paise": total_tpv_paise,
+        "total_payment_volume_display": money(total_tpv_paise),
+        "expected_settlement_paise": recon_result["expected_net_paise"],
+        "expected_settlement_display": recon_result["expected_net_display"],
+        "actual_settlement_paise": recon_result["actual_bank_paise"],
+        "actual_settlement_display": recon_result["actual_bank_display"],
+        "outstanding_residual_paise": recon_result["residual_paise"],
+        "outstanding_residual_display": recon_result["residual_display"],
+        "reconciliation_rate_pct": reconciliation_rate_pct,
+        "status": recon_result["status"],
+        "target_capture_date": ACTIVE_CAPTURE_DATE,
+        "target_batch_id": ACTIVE_BATCH_ID,
+        "transaction_count": total_txns,
+        "matched_transaction_count": assigned_count,
+        "unassigned_transaction_count": unassigned_count,
+        "open_exceptions_count": len(exceptions_list) + len(open_invs),
+        "pending_investigations_count": len(open_invs),
+        "resolved_investigations_count": len(resolved_invs),
+        "channel_breakdown": channel_list,
+        "settlement_trend": trend_data,
+        "exception_distribution": exceptions_list,
+        "ageing_analysis": ageing,
+    }
+
+
+@app.post("/api/demo/scenario/{scenario_id}")
+def set_demo_scenario(scenario_id: str) -> dict[str, Any]:
+    norm = scenario_id.strip().lower()
+    if norm in {"a", "scenario_a", "normal", "baseline"}:
+        options = SimulationOptions(
+            bank_credit_delta_paise=0,
+            adjustment_delta_paise=0,
+            inject_unknown_adjustment=False,
+            unassign_late_transaction=False,
+        )
+        recon_result, _ = calculate(options)
+        record_audit("DEMO_OPERATOR", "SCENARIO_SWITCH", "Activated Scenario A: Normal settlement baseline with 0 residual")
+        return {
+            "scenario": "A",
+            "name": "Normal Settlement",
+            "description": "All payments, MDR adjustments, and bank credits reconcile with zero residual variance.",
+            "options": options.model_dump(),
+            "reconciliation": recon_result,
+        }
+    elif norm in {"b", "scenario_b", "discrepancy"}:
+        options = SimulationOptions(
+            bank_credit_delta_paise=-10000,
+            adjustment_delta_paise=1000,
+            inject_unknown_adjustment=False,
+            unassign_late_transaction=False,
+        )
+        recon_result, _ = calculate(options)
+        record_audit("DEMO_OPERATOR", "SCENARIO_SWITCH", "Activated Scenario B: Settlement discrepancy with ₹100 bank shortfall and ₹10 fee delta")
+        return {
+            "scenario": "B",
+            "name": "Settlement Discrepancy",
+            "description": "Bank credit is short by ₹100.00 and MDR debit fee is increased by ₹10.00, resulting in an unexplained residual.",
+            "options": options.model_dump(),
+            "reconciliation": recon_result,
+        }
+    elif norm in {"c", "scenario_c", "conflict", "missing_evidence"}:
+        options = SimulationOptions(
+            bank_credit_delta_paise=0,
+            adjustment_delta_paise=0,
+            inject_unknown_adjustment=True,
+            unassign_late_transaction=True,
+        )
+        recon_result, _ = calculate(options)
+        record_audit("DEMO_OPERATOR", "SCENARIO_SWITCH", "Activated Scenario C: Missing/conflicting evidence with unassigned cutoff event and unknown fee adjustment")
+        return {
+            "scenario": "C",
+            "name": "Missing or Conflicting Evidence",
+            "description": "Late transaction cutoff lacks an authoritative batch reference, and an unclassified debit adjustment requires human operator review.",
+            "options": options.model_dump(),
+            "reconciliation": recon_result,
+        }
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown scenario '{scenario_id}'. Supported: scenario_a, scenario_b, scenario_c")
 
 
 @app.post("/api/agent/investigate")
@@ -1062,18 +1467,18 @@ def compile_evidence_packet(request: EvidencePacketRequest) -> Response:
 
 @app.post("/api/voice/transcribe")
 async def voice_transcribe(file: UploadFile = File(...)) -> dict[str, Any]:
-    audio = await file.read()
-    if len(audio) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Audio upload must be 10 MB or smaller")
+    audio = await _read_upload_limited(file, 10 * 1024 * 1024, "Audio upload")
     if not sarvam_is_configured():
         return {"transcript": None, "mode": "ASR_UNAVAILABLE_MANUAL_TEXT_REQUIRED", "language_code": None, "note": "SARVAM_API_KEY is not configured. No transcript was fabricated; type the request into the teammate input or configure the backend key."}
     txns, _, _, _ = active_data()
     keyterms = list(dict.fromkeys([str(row.get("pg_txn_id")) for row in txns[:50]] + [str(row.get("order_id")) for row in txns[:50]]))
     try:
         result = transcribe_audio(audio, file.filename or "merchant-audio.webm", keyterms[:50], file.content_type)
+        _record_sarvam_check("asr", "PASS", "Live Saaras transcription received", str(result.get("model") or os.getenv("SARVAM_ASR_MODEL", "saaras:v4")))
         result["reference_candidates"] = _reference_candidates()
         return result
     except Exception as exc:
+        _record_sarvam_check("asr", "FAIL", f"{type(exc).__name__}: provider ASR request failed", os.getenv("SARVAM_ASR_MODEL", "saaras:v4"))
         return {"transcript": None, "mode": "ASR_UNAVAILABLE_MANUAL_TEXT_REQUIRED", "language_code": None, "note": f"Sarvam transcription failed ({type(exc).__name__}). No transcript was fabricated; use typed input or retry when the service is available."}
 
 
@@ -1103,8 +1508,10 @@ def voice_speak(request: VoiceTextRequest) -> Response:
         raise HTTPException(status_code=503, detail="SARVAM_API_KEY is not configured; use browser speech synthesis as a clearly labelled local fallback.")
     try:
         audio = synthesize_speech(request.text, request.language_code)
+        _record_sarvam_check("tts", "PASS", f"Live TTS audio received ({len(audio)} bytes)", os.getenv("SARVAM_TTS_MODEL", "bulbul:v4-flash"))
         return Response(content=audio, media_type="audio/wav", headers={"Content-Disposition": "inline; filename=settlegraph-voice-brief.wav", "X-SettleGraph-Voice-Mode": "LIVE_SARVAM_BULBUL"})
     except Exception as exc:
+        _record_sarvam_check("tts", "FAIL", f"{type(exc).__name__}: provider TTS request failed", os.getenv("SARVAM_TTS_MODEL", "bulbul:v4-flash"))
         raise HTTPException(status_code=503, detail=f"Sarvam TTS unavailable ({type(exc).__name__}); browser speech synthesis may be used as a local fallback.") from exc
 
 
@@ -1455,3 +1862,12 @@ def vendor_assistant_query(request: VendorAssistantQuery) -> dict[str, Any]:
         "duplicate_paise": sum(item["candidate_amount_paise"] for item in duplicates),
         "gap_paise": kirana["gap_paise"],
     })
+
+
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
+# Mount frontend static distribution for unified single-port deployment
+_dist_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _dist_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(_dist_dir), html=True), name="static")

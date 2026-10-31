@@ -542,38 +542,337 @@ def build_evidence_graph(
     adjustments: list[dict[str, Any]],
     settlement_batches: list[dict[str, Any]],
     bank_credits: list[dict[str, Any]],
+    disputes: list[dict[str, Any]] | None = None,
+    investigations: list[dict[str, Any]] | None = None,
+    approvals: list[dict[str, Any]] | None = None,
 ) -> nx.DiGraph:
     graph = nx.DiGraph()
+
+    # 1. Root Merchant node
+    merchant_id = "MERCHANT:PAYTM_STORE_001"
+    graph.add_node(
+        merchant_id,
+        node_type="merchant",
+        label="Merchant Store #001",
+        details={
+            "merchant_id": "MID-99201",
+            "name": "Kirana Merchant Store",
+            "settlement_account": "HDFC Bank ****4412",
+            "status": "ACTIVE_OPERATIONAL",
+        },
+    )
+
     for batch in settlement_batches:
         bid = str(batch["batch_id"])
-        graph.add_node(bid, node_type="settlement_batch", label=bid, details={"payout_utr": batch.get("payout_utr"), "payout_date": batch.get("payout_date"), "source_row_id": batch.get("source_row_id")})
+        graph.add_node(
+            bid,
+            node_type="settlement_batch",
+            label=bid,
+            details={
+                "payout_utr": batch.get("payout_utr"),
+                "payout_date": batch.get("payout_date"),
+                "source_row_id": batch.get("source_row_id"),
+            },
+        )
+        graph.add_edge(
+            merchant_id,
+            bid,
+            relation="DISPATCHES_BATCH",
+            match_rule="merchant settlement account routing",
+            evidence_ref="MERCHANT_CONFIG",
+        )
+
     for txn in transactions:
         tid = str(txn["pg_txn_id"])
-        graph.add_node(tid, node_type="payment", label=tid, details={"amount_paise": int(txn["gross_paise"]), "amount_display": money(int(txn["gross_paise"])), "utr_rrn": txn.get("utr_rrn"), "order_id": txn.get("order_id"), "status": txn.get("status"), "source_row_id": txn.get("source_row_id"), "capture_ts": txn.get("capture_ts")})
+        graph.add_node(
+            tid,
+            node_type="payment",
+            label=tid,
+            details={
+                "amount_paise": int(txn["gross_paise"]),
+                "amount_display": money(int(txn["gross_paise"])),
+                "utr_rrn": txn.get("utr_rrn"),
+                "order_id": txn.get("order_id"),
+                "status": txn.get("status"),
+                "source_row_id": txn.get("source_row_id"),
+                "capture_ts": txn.get("capture_ts"),
+            },
+        )
         bid = txn.get("payout_batch_id")
         settlement_ref = txn.get("settlement_reference")
         if settlement_ref:
             line_id = "SETLINE:" + str(txn.get("source_row_id") or settlement_ref)
-            graph.add_node(line_id, node_type="settlement_line", label=str(settlement_ref), details={"settlement_reference": settlement_ref, "source_row_id": txn.get("source_row_id"), "reported_settled_amount_paise": txn.get("settled_amount_paise"), "source_file": txn.get("source_file")})
-            graph.add_edge(tid, line_id, relation="HAS_SETTLEMENT_LINE", match_rule="explicit settlement_reference in payment/settlement source row", evidence_ref=txn.get("source_row_id"))
+            graph.add_node(
+                line_id,
+                node_type="settlement_line",
+                label=str(settlement_ref),
+                details={
+                    "settlement_reference": settlement_ref,
+                    "source_row_id": txn.get("source_row_id"),
+                    "reported_settled_amount_paise": txn.get("settled_amount_paise"),
+                    "source_file": txn.get("source_file"),
+                },
+            )
+            graph.add_edge(
+                tid,
+                line_id,
+                relation="HAS_SETTLEMENT_LINE",
+                match_rule="explicit settlement_reference in payment/settlement source row",
+                evidence_ref=txn.get("source_row_id"),
+            )
             if bid and str(bid) in graph:
-                graph.add_edge(line_id, str(bid), relation="ASSIGNED_TO_PAYOUT_BATCH", match_rule="explicit payout_batch_id in source row; not timestamp inference", evidence_ref=txn.get("source_row_id"))
+                graph.add_edge(
+                    line_id,
+                    str(bid),
+                    relation="ASSIGNED_TO_PAYOUT_BATCH",
+                    match_rule="explicit payout_batch_id in source row; not timestamp inference",
+                    evidence_ref=txn.get("source_row_id"),
+                )
         elif bid and str(bid) in graph:
-            graph.add_edge(tid, str(bid), relation="ASSIGNED_TO_BATCH", match_rule="explicit payout_batch_id in transaction source row", evidence_ref=txn.get("source_row_id"))
+            graph.add_edge(
+                tid,
+                str(bid),
+                relation="ASSIGNED_TO_BATCH",
+                match_rule="explicit payout_batch_id in transaction source row",
+                evidence_ref=txn.get("source_row_id"),
+            )
+
+        # Connect payment to order if order_id exists
+        if txn.get("order_id"):
+            oid = f"ORDER:{txn['order_id']}"
+            if oid not in graph:
+                graph.add_node(
+                    oid,
+                    node_type="order",
+                    label=f"Order {txn['order_id']}",
+                    details={
+                        "order_id": txn["order_id"],
+                        "amount_paise": int(txn["gross_paise"]),
+                        "amount_display": money(int(txn["gross_paise"])),
+                        "capture_ts": txn.get("capture_ts"),
+                    },
+                )
+            graph.add_edge(
+                tid,
+                oid,
+                relation="FULFILLS_ORDER",
+                match_rule="transaction order_id reference",
+                evidence_ref=txn.get("source_row_id"),
+            )
+
+        # If transaction has no batch assigned, flag unassigned exception node
+        if not bid:
+            ex_node = f"EXCEPTION:UNASSIGNED:{tid}"
+            graph.add_node(
+                ex_node,
+                node_type="exception",
+                label=f"Unassigned: {tid}",
+                details={
+                    "exception_type": "UNASSIGNED_PAYOUT_BATCH",
+                    "reason": "Payment captured but missing explicit payout batch reference",
+                    "amount_display": money(int(txn["gross_paise"])),
+                },
+            )
+            graph.add_edge(
+                tid,
+                ex_node,
+                relation="FLAGS_EXCEPTION",
+                match_rule="unassigned transaction cutoff",
+                evidence_ref=txn.get("source_row_id"),
+            )
+
     for adj in adjustments:
         aid = str(adj["adjustment_id"])
-        graph.add_node(aid, node_type="adjustment", label=aid, details={"type": adj.get("type"), "amount_paise": int(adj["amount_paise"]), "amount_display": money(int(adj["amount_paise"])), "direction": adj.get("direction"), "reference_id": adj.get("reference_id"), "description": adj.get("description"), "source_row_id": adj.get("source_row_id")})
+        graph.add_node(
+            aid,
+            node_type="adjustment",
+            label=aid,
+            details={
+                "type": adj.get("type"),
+                "amount_paise": int(adj["amount_paise"]),
+                "amount_display": money(int(adj["amount_paise"])),
+                "direction": adj.get("direction"),
+                "reference_id": adj.get("reference_id"),
+                "description": adj.get("description"),
+                "source_row_id": adj.get("source_row_id"),
+            },
+        )
         bid = adj.get("batch_id")
         if bid and str(bid) in graph:
-            graph.add_edge(aid, str(bid), relation="BATCH_ADJUSTMENT", match_rule="explicit batch_id in settlement adjustment row", evidence_ref=adj.get("source_row_id"))
+            graph.add_edge(
+                aid,
+                str(bid),
+                relation="BATCH_ADJUSTMENT",
+                match_rule="explicit batch_id in settlement adjustment row",
+                evidence_ref=adj.get("source_row_id"),
+            )
+        if "UNKNOWN" in str(adj.get("type", "")):
+            ex_node = f"EXCEPTION:ADJ:{aid}"
+            graph.add_node(
+                ex_node,
+                node_type="exception",
+                label=f"Unknown Fee: {aid}",
+                details={
+                    "exception_type": "UNCLASSIFIED_DEBIT_FEE",
+                    "reason": adj.get("description", "Unrecognized adjustment category"),
+                    "amount_display": money(int(adj["amount_paise"])),
+                },
+            )
+            graph.add_edge(
+                aid,
+                ex_node,
+                relation="FLAGS_EXCEPTION",
+                match_rule="unclassified debit adjustment category",
+                evidence_ref=adj.get("source_row_id"),
+            )
+
     for bank in bank_credits:
         bank_id = str(bank["bank_row_id"])
-        graph.add_node(bank_id, node_type="bank_credit", label=bank_id, details={"amount_paise": int(bank["credit_paise"]), "amount_display": money(int(bank["credit_paise"])), "transfer_utr": bank.get("transfer_utr"), "credit_date": bank.get("credit_date"), "source_file": bank.get("source_file")})
+        graph.add_node(
+            bank_id,
+            node_type="bank_credit",
+            label=bank_id,
+            details={
+                "amount_paise": int(bank["credit_paise"]),
+                "amount_display": money(int(bank["credit_paise"])),
+                "transfer_utr": bank.get("transfer_utr"),
+                "credit_date": bank.get("credit_date"),
+                "source_file": bank.get("source_file"),
+            },
+        )
         bid = str(bank.get("batch_id", ""))
         batch = next((b for b in settlement_batches if str(b.get("batch_id")) == bid), None)
         # Only connect when both the batch ID and authoritative payout UTR agree.
         if batch and str(batch.get("payout_utr")) == str(bank.get("transfer_utr")) and bid in graph:
-            graph.add_edge(bid, bank_id, relation="BANK_CREDIT_FOR_PAYOUT", match_rule="batch_id + payout UTR exact match", evidence_ref=bank.get("bank_row_id"))
+            graph.add_edge(
+                bid,
+                bank_id,
+                relation="BANK_CREDIT_FOR_PAYOUT",
+                match_rule="batch_id + payout UTR exact match",
+                evidence_ref=bank.get("bank_row_id"),
+            )
+
+    # Supporting dispute evidence
+    if disputes:
+        for case in disputes:
+            cid = str(case.get("case_id") or "")
+            if not cid:
+                continue
+            ev_id = f"EVIDENCE:{cid}"
+            graph.add_node(
+                ev_id,
+                node_type="evidence",
+                label=f"Evidence {cid}",
+                details={
+                    "case_id": cid,
+                    "order_id": case.get("order_id"),
+                    "disputed_amount": money(int(case.get("disputed_paise") or 0)),
+                    "courier_status": case.get("courier_status"),
+                    "otp_verified": case.get("otp_verified"),
+                },
+            )
+            utr = case.get("utr_rrn")
+            matching_txn = next((t["pg_txn_id"] for t in transactions if utr and str(t.get("utr_rrn")) == str(utr)), None)
+            if matching_txn and matching_txn in graph:
+                graph.add_edge(
+                    matching_txn,
+                    ev_id,
+                    relation="HAS_SUPPORTING_EVIDENCE",
+                    match_rule="dispute exact UTR match",
+                    evidence_ref=cid,
+                )
+            elif case.get("order_id"):
+                oid = f"ORDER:{case['order_id']}"
+                if oid in graph:
+                    graph.add_edge(
+                        oid,
+                        ev_id,
+                        relation="HAS_SUPPORTING_EVIDENCE",
+                        match_rule="dispute order reference match",
+                        evidence_ref=cid,
+                    )
+
+    # Linked investigations
+    if investigations:
+        for inv in investigations[:15]:
+            inv_id = f"INVESTIGATION:INV-{inv['id']:04d}"
+            graph.add_node(
+                inv_id,
+                node_type="investigation",
+                label=f"INV-{inv['id']:04d}",
+                details={
+                    "investigation_id": inv["id"],
+                    "status": inv.get("status"),
+                    "decision": inv.get("decision", "PENDING"),
+                    "residual_display": money(int(inv.get("residual_paise") or 0)),
+                    "note": inv.get("note"),
+                },
+            )
+            src = inv.get("source_node_id")
+            if src and src in graph:
+                graph.add_edge(
+                    src,
+                    inv_id,
+                    relation="INVESTIGATED_BY",
+                    match_rule="operator investigation source link",
+                    evidence_ref=f"INV-{inv['id']}",
+                )
+            elif settlement_batches and str(settlement_batches[0]["batch_id"]) in graph:
+                graph.add_edge(
+                    str(settlement_batches[0]["batch_id"]),
+                    inv_id,
+                    relation="INVESTIGATED_BY",
+                    match_rule="batch variance investigation",
+                    evidence_ref=f"INV-{inv['id']}",
+                )
+
+    # Linked approvals / decisions
+    if approvals:
+        for app_row in approvals[:15]:
+            ap_id = str(app_row.get("approval_id") or "")
+            if not ap_id:
+                continue
+            dec_id = f"DECISION:{ap_id}"
+            graph.add_node(
+                dec_id,
+                node_type="operator_decision",
+                label=f"Decision {ap_id}",
+                details={
+                    "approval_id": ap_id,
+                    "status": app_row.get("status"),
+                    "action_type": app_row.get("action_type"),
+                    "amount_display": money(int(app_row.get("amount_paise") or 0)),
+                    "decided_by": app_row.get("decided_by") or "PENDING_REVIEW",
+                },
+            )
+            case_id = app_row.get("case_id")
+            ev_target = f"EVIDENCE:{case_id}"
+            ord_target = f"ORDER:{case_id}"
+            if ev_target in graph:
+                graph.add_edge(
+                    ev_target,
+                    dec_id,
+                    relation="GOVERNED_BY_DECISION",
+                    match_rule="dispute approval decision",
+                    evidence_ref=ap_id,
+                )
+            elif ord_target in graph:
+                graph.add_edge(
+                    ord_target,
+                    dec_id,
+                    relation="GOVERNED_BY_DECISION",
+                    match_rule="order approval decision",
+                    evidence_ref=ap_id,
+                )
+            elif settlement_batches and str(settlement_batches[0]["batch_id"]) in graph:
+                graph.add_edge(
+                    str(settlement_batches[0]["batch_id"]),
+                    dec_id,
+                    relation="GOVERNED_BY_DECISION",
+                    match_rule="batch approval decision",
+                    evidence_ref=ap_id,
+                )
+
     return graph
 
 

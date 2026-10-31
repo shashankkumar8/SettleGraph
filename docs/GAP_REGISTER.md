@@ -1,4 +1,4 @@
-# Gap register — merged SettleGraph v0.5.0
+# Gap register — SettleGraph v0.5.2
 
 **Basis:** selected Stage 1 deck, GOAT build, separate `SettleGraph_Team_Aliens_v4.zip`, source review and current code/tests. “Done” means implemented in the local prototype and tested where practical. It never implies a real provider connection.
 
@@ -38,10 +38,19 @@
 
 ## Current verification
 
-- Backend test suite: **107 passed** in the current working tree.
+- Backend test suite: **114 passed** in the current working tree.
 - Python compile checks: passed.
 - TypeScript syntax transpilation for `App.tsx`, `VendorTab.tsx`, `main.tsx`: zero syntax diagnostics. This is not a full type-check.
 - Full npm production build and browser E2E: not verified because package registry access failed in this handoff environment.
 - No live Paytm, NPCI, bank, POS, courier, ERP, Udyam or Sarvam API call is claimed.
 
 For the separate v4 merge rationale see `V4_FEATURE_AUDIT.md`. For the phased plan to authorised production integrations see `LIVE_READINESS_ROADMAP.md`.
+
+
+## v0.5.2 operational hardening
+
+- Upload body reads are bounded in chunks for ZIP (10 MB), CSV (5 MB) and audio (10 MB) endpoints before downstream parsing. ZIP expansion has separate per-file, total-uncompressed and compression-ratio checks.
+- `GET /api/integrations/status` and the workbench Integration Readiness panel show configuration/connection status separately; secrets are never included.
+- CORS accepts explicit bare HTTP(S) origins only; wildcard and malformed origins are rejected.
+- `verify_project.ps1` now exits non-zero/incomplete when frontend dependencies are missing; it no longer prints a green completion message after skipping the frontend build.
+- Current backend regression suite: **114 passed**. The full frontend production bundle and browser E2E remain unverified until dependencies are installed on the target laptop.

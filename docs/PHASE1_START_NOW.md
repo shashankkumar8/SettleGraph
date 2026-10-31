@@ -38,7 +38,7 @@ cd backend
 python -m pytest -q
 ```
 
-Expected current result: **107 passed**. Re-run the suite on the event laptop rather than relying only on the package verification.
+Expected current result: **114 passed**. Re-run the suite on the event laptop rather than relying only on the package verification.
 
 ## 4. Start the frontend
 

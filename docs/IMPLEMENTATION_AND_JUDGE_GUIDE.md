@@ -149,4 +149,7 @@ For a live product, add verified vendor ERP imports, Udyam source verification, 
 
 ## Current version and test state
 
-This merged build is version 0.5.0 and the backend suite contains **107 passing tests**. `App.tsx`, `VendorTab.tsx` and `main.tsx` pass TypeScript syntax transpilation. The full TypeScript project build, Vite production bundle and browser end-to-end test remain unverified until run on the target Windows machine with npm dependencies installed. See `IMPLEMENTATION_STATUS.md` and `LIVE_READINESS_ROADMAP.md`.
+This merged build is version 0.5.2 and the backend suite contains **114 passing tests**. `App.tsx`, `VendorTab.tsx` and `main.tsx` pass TypeScript syntax transpilation. The full TypeScript project build, Vite production bundle and browser end-to-end test remain unverified until run on the target Windows machine with npm dependencies installed. See `IMPLEMENTATION_STATUS.md` and `LIVE_READINESS_ROADMAP.md`.
+
+
+For actual credentials, provider access requirements, endpoint setup and integration acceptance criteria, read `docs/INTEGRATION_SETUP_GUIDE.md`.

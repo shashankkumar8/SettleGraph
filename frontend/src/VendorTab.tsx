@@ -164,7 +164,7 @@ export default function VendorTab({ request, money }: Props) {
       <div className="panel-header">
         <div className="panel-header-icon"><Store size={18} /></div>
         <div className="panel-header-text"><h3>{receivable.vendor} · {receivable.invoice_id}</h3><p>Three-way review: PO → GRN → invoice → received payments</p></div>
-        <span className={`status-pill ${isLocked ? 'status-bad' : 'status-good'}`}>{String(receivable.payment_status).replaceAll('_', ' ')}</span>
+        <span className={`status-pill ${isLocked ? 'status-bad' : 'status-good'}`}>{String(receivable.payment_status).replace(/_/g, ' ')}</span>
       </div>
       <div className="vendor-metrics">
         <div className="decision-fact"><span>Invoice value</span><strong>{money(receivable.invoice_paise)}</strong></div>
@@ -203,7 +203,7 @@ export default function VendorTab({ request, money }: Props) {
           </button>
         </div>
       </div>
-      {receivable.flags?.length > 0 && <div className="vendor-flags">{receivable.flags.map((flag: string) => <div className="utr-result warn" key={flag}><strong>{flag.split(':')[0].replaceAll('_', ' ')}</strong><p>{flag.split(':').slice(1).join(':').trim()}</p></div>)}</div>}
+      {receivable.flags?.length > 0 && <div className="vendor-flags">{receivable.flags.map((flag: string) => <div className="utr-result warn" key={flag}><strong>{flag.split(':')[0].replace(/_/g, ' ')}</strong><p>{flag.split(':').slice(1).join(':').trim()}</p></div>)}</div>}
       <p className="panel-footnote">Evidence SHA-256: <code>{receivable.evidence_sha256}</code> · Integrity fingerprint only; it does not prove supplier or document authenticity.</p>
     </section>}
 
@@ -211,7 +211,7 @@ export default function VendorTab({ request, money }: Props) {
       <section className="panel">
         <div className="panel-header"><div className="panel-header-icon"><ShieldAlert size={18} /></div><div className="panel-header-text"><h3>Action inbox</h3><p>{exceptions.length} source-linked or synthetic exception(s), ordered by priority</p></div></div>
         {exceptions.length === 0 ? <div className="empty-state">No exceptions in the current demo data.</div> : <div className="table-wrap"><table><thead><tr><th>Priority</th><th>Exception</th><th>Amount</th><th>Suggested action</th></tr></thead><tbody>
-          {exceptions.map(item => <tr key={item.id}><td><span className={badgeClass(item.priority)}>{item.priority}</span></td><td>{String(item.kind).replaceAll('_', ' ')}</td><td className="amount-cell">{money(item.amount_paise)}</td><td>{item.action}</td></tr>)}
+          {exceptions.map(item => <tr key={item.id}><td><span className={badgeClass(item.priority)}>{item.priority}</span></td><td>{String(item.kind).replace(/_/g, ' ')}</td><td className="amount-cell">{money(item.amount_paise)}</td><td>{item.action}</td></tr>)}
         </tbody></table></div>}
       </section>
 
@@ -227,7 +227,7 @@ export default function VendorTab({ request, money }: Props) {
     </section>
 
     {kirana && <section className="panel">
-      <div className="panel-header"><div className="panel-header-icon"><Wallet size={18} /></div><div className="panel-header-text"><h3>Kirana payout decomposition</h3><p>₹80,000 synthetic collection example · only documented rows are explained</p></div><span className={`status-pill ${kirana.unmatched_paise === 0 ? 'status-good' : 'status-warn'}`}>{kirana.status.replaceAll('_', ' ')}</span></div>
+      <div className="panel-header"><div className="panel-header-icon"><Wallet size={18} /></div><div className="panel-header-text"><h3>Kirana payout decomposition</h3><p>₹80,000 synthetic collection example · only documented rows are explained</p></div><span className={`status-pill ${kirana.unmatched_paise === 0 ? 'status-good' : 'status-warn'}`}>{kirana.status.replace(/_/g, ' ')}</span></div>
       <div className="vendor-metrics vendor-kirana-metrics">
         <div className="decision-fact"><span>Collected</span><strong>{money(kirana.gross_paise)}</strong></div>
         <div className="decision-fact"><span>Bank credited</span><strong>{money(kirana.bank_paise)}</strong></div>
@@ -235,13 +235,13 @@ export default function VendorTab({ request, money }: Props) {
         <div className="decision-fact"><span>Unmatched amount</span><strong>{money(kirana.unmatched_paise)}</strong></div>
       </div>
       <div className="table-wrap"><table><thead><tr><th>Evidence type</th><th>Reference</th><th>Amount</th></tr></thead><tbody>
-        {kirana.items.map((item: AnyObj) => <tr key={item.ref}><td>{String(item.kind).replaceAll('_', ' ')}</td><td><code>{item.ref}</code></td><td className="amount-cell">{money(item.paise)}</td></tr>)}
+        {kirana.items.map((item: AnyObj) => <tr key={item.ref}><td>{String(item.kind).replace(/_/g, ' ')}</td><td><code>{item.ref}</code></td><td className="amount-cell">{money(item.paise)}</td></tr>)}
       </tbody></table></div>
       <p className="panel-footnote">{kirana.next_step || 'The recorded documented amounts equal the payout gap.'} The system never labels an unexplained residual as a fee or fraud without source evidence.</p>
     </section>}
 
     {tat && <section className="panel">
-      <div className="panel-header"><div className="panel-header-icon"><CalendarClock size={18} /></div><div className="panel-header-text"><h3>Failed-payment turnaround monitor</h3><p>RBI TAT example for the selected UPI failure category</p></div><span className={`status-pill ${tat.days_late > 0 ? 'status-warn' : 'status-good'}`}>{String(tat.compensation_status).replaceAll('_', ' ')}</span></div>
+      <div className="panel-header"><div className="panel-header-icon"><CalendarClock size={18} /></div><div className="panel-header-text"><h3>Failed-payment turnaround monitor</h3><p>RBI TAT example for the selected UPI failure category</p></div><span className={`status-pill ${tat.days_late > 0 ? 'status-warn' : 'status-good'}`}>{String(tat.compensation_status).replace(/_/g, ' ')}</span></div>
       <div className="mapping-fields vendor-tat-fields">
         <label><span>Transaction date</span><input type="date" value={tatDate} onChange={e => setTatDate(e.target.value)} /></label>
         <label><span>Failure category</span><select value={tatType} onChange={e => setTatType(e.target.value)}><option value="UPI_P2M_CONFIRMATION_MISSING">UPI merchant confirmation missing · T+5</option><option value="UPI_P2P_BENEFICIARY_NOT_CREDITED">UPI beneficiary not credited · T+1</option></select></label>
@@ -259,7 +259,7 @@ export default function VendorTab({ request, money }: Props) {
     <section className="panel">
       <div className="panel-header"><div className="panel-header-icon"><CheckCircle2 size={18} /></div><div className="panel-header-text"><h3>Ask the local ledger (Hindi / Hinglish)</h3><p>Deterministic intent routing. No LLM produces amounts or legal conclusions here.</p></div></div>
       <div className="vendor-query-row"><input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void askLedger() }} placeholder="Mere kitne payment pending hain?" /><button className="primary-button" disabled={busy || !query.trim()} onClick={() => void askLedger()}>Ask ledger</button></div>
-      {answer && <div className="utr-result good"><strong>{String(answer.intent).replaceAll('_', ' ')}</strong><p>{answer.reply_hi}</p><small>{answer.source}</small></div>}
+      {answer && <div className="utr-result good"><strong>{String(answer.intent).replace(/_/g, ' ')}</strong><p>{answer.reply_hi}</p><small>{answer.source}</small></div>}
     </section>
 
     <section className="panel vendor-regulatory-note">

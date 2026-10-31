@@ -36,8 +36,26 @@ def init_db() -> None:
             residual_paise INTEGER NOT NULL,
             note TEXT NOT NULL,
             source_node_id TEXT,
-            snapshot_sha256 TEXT NOT NULL
+            snapshot_sha256 TEXT NOT NULL,
+            updated_at TEXT,
+            assigned_to TEXT,
+            decision TEXT,
+            decided_by TEXT,
+            decision_note TEXT,
+            notes_json TEXT
         )""")
+        # Backward-compatible migrations for investigations table
+        inv_columns = {row[1] for row in conn.execute("PRAGMA table_info(investigations)").fetchall()}
+        for col, col_type in [
+            ("updated_at", "TEXT"),
+            ("assigned_to", "TEXT"),
+            ("decision", "TEXT"),
+            ("decided_by", "TEXT"),
+            ("decision_note", "TEXT"),
+            ("notes_json", "TEXT"),
+        ]:
+            if col not in inv_columns:
+                conn.execute(f"ALTER TABLE investigations ADD COLUMN {col} {col_type}")
         conn.execute("""CREATE TABLE IF NOT EXISTS audit_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
@@ -218,22 +236,120 @@ def verify_audit_chain() -> dict[str, Any]:
     return {"integrity_valid": True, "event_count": len(rows), "first_invalid_event_id": None, "head_sha256": previous, "note": "The local hash chain is internally consistent; an unanchored tail deletion cannot be detected, and this is not a tamper-proof or externally anchored audit ledger."}
 
 
-def create_investigation(status: str, residual_paise: int, note: str, source_node_id: str | None, snapshot_sha256: str) -> dict[str, Any]:
+def create_investigation(
+    status: str, residual_paise: int, note: str, source_node_id: str | None, snapshot_sha256: str,
+    assigned_to: str = "DEMO_OPERATOR"
+) -> dict[str, Any]:
     now = _now()
+    initial_notes = json.dumps([{"text": note, "author": assigned_to, "created_at": now}])
     with _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO investigations(created_at, status, residual_paise, note, source_node_id, snapshot_sha256) VALUES(?,?,?,?,?,?)",
-            (now, status, int(residual_paise), note, source_node_id, snapshot_sha256),
+            """INSERT INTO investigations(created_at, updated_at, status, residual_paise, note, source_node_id, snapshot_sha256, assigned_to, decision, notes_json)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (now, now, status, int(residual_paise), note, source_node_id, snapshot_sha256, assigned_to, "PENDING", initial_notes),
         )
         inv_id = int(cur.lastrowid)
-        _insert_audit_event(conn, "DEMO_OPERATOR", "INVESTIGATION_CREATED", f"Investigation {inv_id}: {note}", snapshot_sha256)
-    return {"id": inv_id, "created_at": now, "status": status, "residual_paise": int(residual_paise), "note": note, "source_node_id": source_node_id, "snapshot_sha256": snapshot_sha256}
+        _insert_audit_event(conn, assigned_to, "INVESTIGATION_CREATED", f"Investigation INV-{inv_id:04d}: {note}", snapshot_sha256)
+    return get_investigation(inv_id) or {
+        "id": inv_id, "created_at": now, "status": status, "residual_paise": int(residual_paise),
+        "note": note, "source_node_id": source_node_id, "snapshot_sha256": snapshot_sha256
+    }
+
+
+def get_investigation(inv_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM investigations WHERE id=?", (inv_id,)).fetchone()
+    if not row:
+        return None
+    data = dict(row)
+    try:
+        data["notes"] = json.loads(data.get("notes_json") or "[]")
+    except Exception:
+        data["notes"] = [{"text": data.get("note", ""), "author": data.get("assigned_to") or "DEMO_OPERATOR", "created_at": data.get("created_at")}]
+    return data
+
+
+def add_investigation_note(inv_id: int, note_text: str, author: str = "DEMO_OPERATOR") -> dict[str, Any] | None:
+    now = _now()
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM investigations WHERE id=?", (inv_id,)).fetchone()
+        if not row:
+            return None
+        try:
+            notes = json.loads(row["notes_json"] or "[]")
+        except Exception:
+            notes = [{"text": row["note"], "author": row["assigned_to"] or "DEMO_OPERATOR", "created_at": row["created_at"]}]
+        notes.append({"text": note_text, "author": author, "created_at": now})
+        notes_str = json.dumps(notes)
+        conn.execute(
+            "UPDATE investigations SET notes_json=?, updated_at=? WHERE id=?",
+            (notes_str, now, inv_id),
+        )
+        _insert_audit_event(conn, author, "INVESTIGATION_NOTE_ADDED", f"Investigation INV-{inv_id:04d} note added: {note_text[:100]}", row["snapshot_sha256"])
+    return get_investigation(inv_id)
+
+
+def decide_investigation(inv_id: int, decision: str, decided_by: str = "DEMO_OPERATOR", note: str = "") -> dict[str, Any] | None:
+    norm = decision.strip().upper()
+    resolved_decision = "APPROVE_RESOLUTION" if "APPROVE" in norm else "REJECT_RESOLUTION"
+    new_status = "RESOLVED" if "APPROVE" in norm else "REJECTED"
+    now = _now()
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM investigations WHERE id=?", (inv_id,)).fetchone()
+        if not row:
+            return None
+        try:
+            notes = json.loads(row["notes_json"] or "[]")
+        except Exception:
+            notes = [{"text": row["note"], "author": row["assigned_to"] or "DEMO_OPERATOR", "created_at": row["created_at"]}]
+        if note:
+            notes.append({"text": f"[{resolved_decision}] {note}", "author": decided_by, "created_at": now})
+        conn.execute(
+            """UPDATE investigations
+               SET decision=?, decided_by=?, decision_note=?, status=?, updated_at=?, notes_json=?
+               WHERE id=?""",
+            (resolved_decision, decided_by, note, new_status, now, json.dumps(notes), inv_id),
+        )
+        _insert_audit_event(conn, decided_by, "INVESTIGATION_DECIDED", f"Investigation INV-{inv_id:04d} {resolved_decision}: {note[:100]}", row["snapshot_sha256"])
+    return get_investigation(inv_id)
+
+
+def reopen_investigation(inv_id: int, reopened_by: str = "DEMO_OPERATOR", note: str = "") -> dict[str, Any] | None:
+    now = _now()
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT * FROM investigations WHERE id=?", (inv_id,)).fetchone()
+        if not row:
+            return None
+        try:
+            notes = json.loads(row["notes_json"] or "[]")
+        except Exception:
+            notes = [{"text": row["note"], "author": row["assigned_to"] or "DEMO_OPERATOR", "created_at": row["created_at"]}]
+        notes.append({"text": f"[REOPENED] {note or 'Reopened for additional review.'}", "author": reopened_by, "created_at": now})
+        conn.execute(
+            """UPDATE investigations
+               SET decision='PENDING', status='OPEN', updated_at=?, notes_json=?
+               WHERE id=?""",
+            (now, json.dumps(notes), inv_id),
+        )
+        _insert_audit_event(conn, reopened_by, "INVESTIGATION_REOPENED", f"Investigation INV-{inv_id:04d} reopened: {note[:100]}", row["snapshot_sha256"])
+    return get_investigation(inv_id)
 
 
 def list_investigations() -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute("SELECT * FROM investigations ORDER BY id DESC LIMIT 100").fetchall()
-    return [dict(r) for r in rows]
+    results = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["notes"] = json.loads(d.get("notes_json") or "[]")
+        except Exception:
+            d["notes"] = [{"text": d.get("note", ""), "author": d.get("assigned_to") or "DEMO_OPERATOR", "created_at": d.get("created_at")}]
+        results.append(d)
+    return results
 
 
 def list_audit_events() -> list[dict[str, Any]]:

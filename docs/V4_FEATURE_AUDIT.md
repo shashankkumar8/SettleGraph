@@ -2,7 +2,7 @@
 
 **Audit date:** 31 October 2026  
 **Compared builds:** `SettleGraph_Team_Aliens_v4.zip` and the prior `SettleGraph_Team_Aliens_GOAT.zip`  
-**Final code line:** SettleGraph Team Aliens v0.5.0
+**Final code line:** SettleGraph Team Aliens v0.5.2
 
 ## Executive decision
 

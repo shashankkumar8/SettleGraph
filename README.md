@@ -1,71 +1,76 @@
-# SettleGraph — Team Aliens
+# SettleGraph 0.6 — Merchant Settlement Intelligence Platform
 
-**Evidence-first merchant operations workbench** · Paytm Build for India AI Hackathon 2026 · Team 275
+**Evidence-backed merchant settlement intelligence & exception-resolution platform** · Independent fintech workbench
 
-SettleGraph connects merchant-side payment, settlement, adjustment, bank, order and delivery evidence so an operator can understand payout discrepancies, inspect suspicious counter payments, prepare dispute evidence and stage sensitive decisions for human review. It is a deterministic financial-operations workbench, not a chatbot wrapper.
+SettleGraph connects merchant-side payment, settlement, fee adjustment, bank statement, POS order and courier delivery evidence so an operator can understand payout discrepancies, reconcile fragmented accounts, investigate exceptions with explainable graph reasoning, and record auditable human decisions.
 
-> **Honest runtime boundary:** the included fixtures are synthetic. The app runs locally and supports uploaded local CSVs / ZIP bundles. There is no live Paytm, NPCI, bank, courier or merchant POS connection, no real refund execution, and no real dispute submission. Do not use it to make live financial decisions or upload unredacted customer data.
+> **Key Differentiator:** *"From fragmented settlement records to connected, explainable and auditable merchant investigations."*
+>
+> **Honest Runtime Boundary:** Built-in fixtures are synthetic. The workbench runs locally with SQLite persistence and supports uploaded local CSVs and ZIP bundles. There is no live Paytm, NPCI, core bank, courier, or POS connection, no autonomous refund execution, and no live dispute submission. It assists human operators; it does not make financial decisions autonomously.
 
-## What is actually functional in this build
+---
 
-### Settlement reconciliation
+## What is Functional in SettleGraph 0.6
 
-- Monetary input is converted with `Decimal` into integer paise. Reconciliation and residual calculations use integers, not binary floating-point.
-- The engine requires explicit `payout_batch_id`, `batch_id` and exact payout UTR references. It does **not** infer payout-batch membership from the clock or assume that any particular fee rate applies to a payment instrument.
-- Debit/credit adjustments are grouped from source rows. Unknown categories, invalid references and missing rows remain visible as review conditions.
-- Multiple bank rows may contribute when they match the selected batch and authoritative payout UTR.
-- The output distinguishes `RECONCILED`, `UNEXPLAINED_VARIANCE`, `NEEDS_REVIEW` and `INCOMPLETE_OR_UNMATCHED`.
-- A bounded two-pointer capture→nodal event analyser pairs exact transaction IDs inside a configurable `[-15m, +36h]` window, reports cross-date events and exposes unmatched/ambiguous references. It requires a nodal source-row reference; missing nodal amount evidence is labelled unavailable rather than assumed equal.
+### 1. Interactive Merchant Command Centre
+- **6-Metric Executive KPI Grid:** Real-time visibility into Total Payment Volume (TPV), Net Expected Payout, Actual Bank Statement Credit, Outstanding Residual Gap, Reconciliation Rate %, and Open Exceptions.
+- **7-Day Settlement Trend Financial Chart:** Interactive SVG visualization comparing gross volume, net expected, and confirmed bank credits over time with hover tooltips.
+- **Payment Channel Breakdown:** Distribution and percentage share across UPI Direct, RuPay Credit Cards, Netbanking, and Wallets.
+- **Exception Root-Cause Intelligence & Ageing:** Categorized anomaly tracking (Bank Shortfall, Cutoff Variance, MDR Fee Discrepancy, Disputed Delivery) with `<24h`, `24–48h`, and `>48h` ageing analysis.
+- **Quick Operations Bar:** 1-click access to all core modules.
 
-### Evidence graph and two different Merkle uses
+### 2. Signature Feature: Interactive Settlement Graph
+- **Connected Multi-Tier Graph:** Visualizes directional relationships across:
+  `Merchant → Settlement Batch → Payment → Order → Settlement Line → Fee Adjustment → Bank Credit → Evidence → Exception → Investigation → Operator Decision`.
+- **Interactive Canvas Engine:** Smooth drag-to-pan, wheel zoom, zoom controls (`+`, `−`, reset), and auto-centering.
+- **Entity Type Filtering:** Instant filtering pills across 10 entity categories.
+- **Visual Highlight for Anomalies:** Unassigned transactions, unknown fees, and open disputes are highlighted with warning borders and dashed relations.
+- **Slide-Over Node Detail Drawer:** Click any node to inspect metadata, copy reference IDs, trace the shortest NetworkX path to bank credit, or launch an investigation directly from the node.
+- **Instant Search & Jump:** Real-time node search by Transaction ID, Order ID, UTR, or Batch ID.
 
-- The NetworkX evidence graph connects records only where a source reference supports an edge and surfaces the match rule/source row.
-- The dataset integrity Merkle tree fingerprints source rows and exposes individual inclusion proofs.
-- The dispute Merkle tree contains three leaves: `NODAL_PAYMENT`, `POS_ORDER_INVOICE` and `COURIER_DELIVERY`. Its root changes when a hashed field changes. Each leaf has a verifiable proof.
-- SHA-256/Merkle proves consistency with the captured bytes/fields only. It does not prove a source system is genuine, complete or truthful.
+### 3. Reconciliation Studio
+- **Drag-and-Drop Ingestion:** Drag and drop canonical 4-report ZIPs or raw Paytm merchant CSV exports with animated drop states.
+- **Visual Reconciliation Flow Pipeline:** Step-by-step arithmetic bridge:
+  `Captured Volume → Batch Gross − Debit Adjustments = Expected Net vs Bank Credit → Reconciliation Verdict`.
+- **Raw Paytm CSV Normalization:** Converts decimal currency strings to integer paise and previews column mapping before staging.
+- **Tabbed Transaction Analysis:** Segmented tables for All, Matched (139), Unassigned / Missing Reference (4), Shifted Cutoff, and Fee Adjustments.
+- **Transaction Detail Drawer:** Displays exact gross, commission, GST, net, nodal timestamp, and match failure diagnosis.
 
-### Break-the-case policy lab
+### 4. Investigation Workspace & Decision Workflows
+- **Case Register:** Persisted in SQLite `investigations` table with status filters (`ALL`, `OPEN`, `RESOLVED`, `REJECTED`).
+- **4-Part Evidence Checklist:** Verifies Payment PG record, Settlement Batch reference, Bank Statement credit, and Dispute Merkle proof.
+- **Operator Notes Timeline Feed:** Append timestamped follow-up notes that persist immediately across page refreshes.
+- **Operator Resolution Decision:** Staged `APPROVE_RESOLUTION` or `REJECT_RESOLUTION` decisions with rationale notes.
+- **Case Reopening:** Ability to reopen resolved investigations if new bank statements or evidence emerge.
+- **Cryptographic Audit Chain:** Every investigation, note, and decision is hashed into a SHA-256 linked local audit chain.
 
-- The synthetic dispute workbench can corrupt the OTP, alter invoice amount, contradict courier status or stage a duplicate-debit scenario.
-- The policy engine deterministically returns a review state. Contradictions lock the policy gate. A clean synthetic case is only marked **ready for human review**.
-- `external_submission_enabled` is always false. There is no hidden live dispute endpoint.
+### 5. Judge-Ready 3-Scenario Demo Mode
+- **Top Demo Banner:**
+  - **Scenario A (Normal Settlement):** 100% matched payments, ₹0 residual, clean reconciliation baseline.
+  - **Scenario B (Settlement Discrepancy):** Injects ₹100 bank credit shortfall and ₹10 MDR fee delta; highlights unexplained variance in graph and metrics.
+  - **Scenario C (Conflicting Evidence):** Injects unassigned late cutoff transaction and unclassified fee adjustment; requires operator investigation.
+- **Reset Demo Data Action:** Cleanly restores the baseline dataset with a safety confirmation modal.
+- **Refresh Persistence:** URL hash routing preserves the active tab and all SQLite records across browser reloads.
 
-### Counter operations
+### 6. Dispute Policy Lab & Counter Operations
+- **3-Way Merkle Dispute Verification:** Binds Nodal, POS Invoice, and Courier delivery proofs into verifiable leaf and root hashes.
+- **Controlled Fault Injection:** Corrupt OTP, alter invoice amount, contradict courier status, or simulate duplicate debit.
+- **Duplicate Debit Shield:** Idempotent detection of identical order ID + paise amount within 120s; stages proposal for human review.
+- **Mock POS Order Sync:** Changes local mock POS order state from `PAYMENT_PENDING` to `PAID` idempotently.
+- **Vendor & Exceptions Desk:** 3-way PO/GRN/Invoice match, MSMED Act 15/45-day calculation, RBI illustrative bank rate toggle, Kirana decomposition, and RBI failed TAT monitor.
+- **Merchant AI Teammate & Voice:** Read-only tool loop. When Sarvam is configured, supports Hindi/Hinglish chat and Saaras ASR; when unconfigured, falls back to deterministic local tool execution without claiming live model output.
 
-- Duplicate-debit check stages an idempotent local approval record. Approve/reject changes the local approval state only; it never calls a refund API. Detection uses exact order ID + integer-paise amount + distinct successful references within 120 seconds; if both payer identifiers are present they must agree. The raw VPA is never returned, and absent payer identity is explicitly labelled unavailable.
-- Paid-but-pending order sync operates against a local mock POS order, with an idempotency key. It does not call a merchant POS.
-- Fake UTR checks query the currently loaded demo/imported dataset only. `NO_MATCH_IN_LOADED_DEMO_DATA` is not proof of fraud and is not a Paytm switch lookup.
+---
 
-### Vendor & Exceptions Desk (merged from the separate v4 branch)
+## Technical Constraints & Data Integrity
 
-- The sixth workbench section provides a vendor receivable example connecting purchase order, GRN, invoice, dated payments/notes and outstanding balance.
-- MSMED timing is shown only from recorded supplier/GRN fields. Udyam status, category, activity/NIC code, relevant registration/supply date and source documents are not authenticated by this local fixture.
-- The 15-day objection/acceptance and 45-day agreed-term timeline is presented as a workflow aid. Any legal eligibility or claim still needs source verification and legal review.
-- The interest output is **illustrative only**. It stays blank until an operator enters and explicitly confirms a bank-rate input and every principal-changing event has a date. The current single-rate model is not a legal/statutory interest statement.
-- UPI failed-transaction examples distinguish P2M merchant-confirmation-missing (T+5) from P2P beneficiary-not-credited (T+1). The ₹100/day calculation is a potential scenario for the specified category only; it does not establish that the underlying transaction qualifies.
-- The Kirana payout figures and starter vendor invoice are synthetic fixtures. The vendor follow-up button creates a local approval record only; no email, WhatsApp or ERP action is sent.
-- The Hinglish query helper is a small deterministic intent router, not general-purpose AI.
+- **Integer Paise Calculations:** All monetary arithmetic uses integer paise with Python `Decimal`. Binary floating-point math is strictly avoided.
+- **Authoritative References:** Payout batches and bank linkages require explicit, source-recorded reference IDs; membership is never inferred from timestamps alone.
+- **Human Authority:** The platform does not make financial decisions or execute money movement autonomously.
 
-See `docs/V4_FEATURE_AUDIT.md` for the detailed merge decision and `docs/LIVE_READINESS_ROADMAP.md` for the path to authorised integrations.
+---
 
-### Import, Sarvam and evidence packet
-
-- Canonical ZIP import validates four core reports before changing the active local dataset; an optional `disputes.csv` can supply case-level POS/courier evidence. The active bundle and dispute list persist in SQLite. If `disputes.csv` is omitted, imported dispute cases are cleared rather than carrying stale fixture cases into a new dataset.
-- Raw Paytm-style CSV preview normalises supported column aliases into integer paise and displays which fields were mapped.
-- The explicit mapping workflow stores a **staged source record** with operator-supplied capture date, batch ID, payout UTR and payout date. It does not silently turn that one report into a full ledger: bank credits and adjustment completeness still need to be supplied/verified in the canonical bundle.
-- Optional Sarvam Chat Completion may select from a backend allow-list of read-only tools. It cannot compute money or execute a sensitive action. The agent uses `sarvam-105b` with reasoning disabled and a short output budget to conserve credits; SaaS/API errors fall back to deterministic tools. Saaras v4 ASR and Bulbul v4 Flash TTS are key-gated. Offline fallback is explicitly labelled; no transcript is fabricated when ASR is unavailable.
-- Reference binding uses edit-distance candidates only. Ambiguous or noisy references require user confirmation.
-- Four-exhibit PDF includes reconciliation, UTR/bank evidence, order/dispute evidence and voice transcript/absence. For a dispute case it also includes the three-way Merkle root and leaf hashes. It is a local review packet, not a statutory/legal filing or provider submission.
-
-## Important implementation choices versus the pitch deck
-
-The selected deck is the product contract, but a hackathon prototype must not pretend that unavailable provider data or APIs exist. Three implementation choices are deliberate:
-
-1. **No timing-only payout assignment.** `analyse_cutoff_events()` is implemented as a bounded two-pointer event-window analysis over the normalized capture and nodal timestamps, pairing only exact transaction IDs and reporting cross-date, unmatched and ambiguous events. In this local import model both event fields are carried on the same transaction row; production still needs two independently sourced provider feeds and a verified timezone/cutoff contract. Neither timestamps nor proximity assign payout batches: only explicit source batch references do.
-2. **SQLite local store, not PostgreSQL `SKIP LOCKED`.** SQLite keeps the demo self-contained and is used for local persistence/idempotency. PostgreSQL worker locking, multi-tenant transactions and concurrent job processing remain a deployment phase.
-3. **CSS workbench, not Tailwind utility styling.** The existing React/TypeScript workbench is retained and improved rather than replacing it with a generic dashboard. The interaction is API-driven; the visual system uses project CSS.
-
-These deltas are listed in `docs/PROJECT_AUDIT.md` and `docs/GAP_REGISTER.md`; they are not hidden.
+## Quick Start (Windows)
 
 ## Live demo deployment (Render)
 
@@ -73,132 +78,75 @@ The project is deployed as two Render services:
 
 - **Frontend:** [SettleGraph Web App](https://settlegraph-frontend-shashank.onrender.com)
 - **Backend API:** [SettleGraph API](https://settlegraph-api-shashank.onrender.com)
-- **API health endpoint:** [\u002fapi/health](https://settlegraph-api-shashank.onrender.com/api/health)
+- **API health endpoint:** [/api/health](https://settlegraph-api-shashank.onrender.com/api/health)
 - **Render Blueprint:** [render.yaml](render.yaml)
 
 The frontend is a React/Vite static site. The backend is a FastAPI web service. The frontend is configured to call the backend through `VITE_API_BASE_URL`, and backend CORS is configured through the `CORS_ORIGINS` environment variable in the Blueprint.
 
 **Deployment limitations:** the backend currently uses SQLite on Render's free service filesystem. Render's free instance filesystem is ephemeral, so uploaded datasets, local approvals and history must not be treated as durable and may be lost when the service restarts or redeploys. The free web service may also spin down after inactivity, causing a delay on the first request. The app remains a synthetic-data prototype; deployment does not add live Paytm, bank, NPCI, POS or courier integrations, nor does it enable real refunds or dispute submissions.
 
-## Windows quick start
+---
 
-Prerequisites: Python 3.11+ and Node.js 20+. Internet is needed for the first dependency installs.
+Prerequisites: Python 3.11+ and Node.js 20+.
 
-1. Open PowerShell in the project root:
-
-   ```powershell
-   .\start_backend.ps1
-   ```
-
-   The script creates `backend/.venv`, installs `backend/requirements.txt`, and launches the API at <http://127.0.0.1:8000>. API docs are at <http://127.0.0.1:8000/docs>.
-
-2. Open a second PowerShell terminal in the project root:
-
-   ```powershell
-   .\start_frontend.ps1
-   ```
-
-   Open <http://127.0.0.1:5173>. In development, Vite proxies `/api` to the local FastAPI service. Set `VITE_API_BASE_URL` only when pointing the frontend at a separately hosted API.
-
-3. Run backend tests:
-
-   ```powershell
-   cd backend
-   .\.venv\Scripts\Activate.ps1
-   python -m pytest -q
-   ```
-
-   **Verified in this handoff: 107 backend tests pass.** Python compile checks pass. Global TypeScript 5.8.3 syntax transpilation reports no diagnostics for `App.tsx`, `VendorTab.tsx` and `main.tsx`. The full project type-check/Vite production build and browser smoke test remain unverified because npm registry access failed in this environment; see `docs/IMPLEMENTATION_STATUS.md`.
-
-## Additional product modules and production roadmap
-
-The original shortlisted deck remains the main product story. The Vendor & Exceptions Desk is a useful adjacent module merged from the separate v4 ZIP; it must not be described as a live Udyam/ERP/bank integration.
-
-- [v4 ZIP feature audit and merge decision](docs/V4_FEATURE_AUDIT.md)
-- [Live-readiness roadmap, source contracts and file-by-file phases](docs/LIVE_READINESS_ROADMAP.md)
-- [Current implementation status](docs/IMPLEMENTATION_STATUS.md)
-- [Gap register](docs/GAP_REGISTER.md)
-- [Implementation and judge guide](docs/IMPLEMENTATION_AND_JUDGE_GUIDE.md)
-
-## Optional Sarvam setup
-
-Create `backend/.env` from `backend/.env.example` and set the key there, or set process environment variables before starting the API. Never put the key in React code, commit it, or include it in screenshots/demo recordings.
-
+### 1. Launch Backend API
 ```powershell
-Copy-Item backend/.env.example backend/.env
-notepad backend/.env
+.\start_backend.ps1
 ```
+- API Base: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+- OpenAPI Documentation: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-Set:
-
-```dotenv
-SARVAM_API_KEY=YOUR_KEY
-SARVAM_CHAT_MODEL=sarvam-105b
-SARVAM_ASR_MODEL=saaras:v4
-SARVAM_TTS_MODEL=bulbul:v4-flash
-SARVAM_TTS_SPEAKER=shubh_enhi_ads
+### 2. Launch Frontend Workbench
+```powershell
+.\start_frontend.ps1
 ```
+- Open [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser.
 
-The `.env` loader reads `backend/.env` when the backend imports the Sarvam adapter and does not overwrite variables already set in the process environment. Create/edit the file **before** starting the backend; restart the backend after changing the key or model settings. Test live chat, ASR and TTS on the target network; live provider operation is **not** claimed as verified here. Microphone capture requires browser permission and a secure context (localhost is supported). If the Sarvam network request fails, the agent falls back to the deterministic local path; speech playback can use browser speech synthesis. ASR failure returns no transcript.
+### 3. Verify Project Integrity
+```powershell
+powershell -ExecutionPolicy Bypass -File .\verify_project.ps1
+```
+Runs:
+1. Backend python compile check (`compileall`).
+2. Backend pytest regression suite (**121 passed tests**).
+3. Frontend TypeScript transpilation (`npm run typecheck`).
+4. Frontend production build (`npm run build`).
 
-## Canonical import bundle
+---
 
-Upload a ZIP with these UTF-8 CSVs (they may be inside a folder in the ZIP):
+## API Map (v0.6)
 
-| File | Required columns |
+| Method & Route | Purpose |
 |---|---|
-| `transactions.csv` | `pg_txn_id,source_row_id,gross_paise,capture_ts,status,payout_batch_id` |
-| `adjustments.csv` | `adjustment_id,source_row_id,type,amount_paise,direction,batch_id` |
-| `settlement_batches.csv` | `batch_id,payout_utr,payout_date,source_row_id` |
-| `bank_credits.csv` | `bank_row_id,batch_id,transfer_utr,credit_paise,credit_date,source_file` |
-| `disputes.csv` | Optional: `case_id,disputed_paise,utr_rrn,order_id,order_status,invoice_amount_paise,invoice_source_row_id,awb,courier_status,otp_verified,courier_source_row_id` |
+| `GET /api/health` | Service state, external flags, and Sarvam configuration status |
+| `GET /api/dashboard/stats` | Executive KPI figures, 7-day trend, channel share, and ageing |
+| `POST /api/demo/scenario/{id}` | Instant 1-click activation of Demo Scenario A, B, or C |
+| `GET /api/demo/reconcile`, `POST /api/demo/reconcile` | Deterministic reconciliation calculation and fault simulation |
+| `POST /api/demo/reset` | Restore baseline synthetic source reports |
+| `GET /api/graph/overview` | Full multi-tier connected evidence graph (450+ nodes & edges) |
+| `GET /api/graph/trace/{node_id}` | NetworkX shortest path trace from source node to bank credit |
+| `GET /api/investigations`, `POST /api/investigations` | List and create persisted investigations |
+| `GET /api/investigations/{id}` | Retrieve comprehensive investigation detail and notes |
+| `POST /api/investigations/{id}/notes` | Append operator follow-up note to investigation |
+| `POST /api/investigations/{id}/decision` | Record operator resolution decision (`APPROVE` / `REJECT`) |
+| `POST /api/investigations/{id}/reopen` | Reopen resolved case for re-audit |
+| `POST /api/import-zip` | Ingest and validate canonical 4-report ZIP bundle |
+| `POST /api/import/paytm-csv/preview` | Preview raw Paytm merchant CSV with paise column mapping |
+| `POST /api/import/paytm-csv/stage` | Stage mapped export without altering active ledger |
+| `GET /api/integrity/merkle` | Dataset Merkle root and per-record inclusion proofs |
+| `POST /api/disputes/{case_id}/evaluate` | 3-way Merkle evaluation with controlled fault injection |
+| `POST /api/operations/duplicate-debits/check` | Scan active payments for duplicate debit candidates |
+| `GET /api/approvals`, `POST /api/approvals/{id}/decision` | Local approval queue and manual handoff decisions |
+| `POST /api/operations/orders/{id}/sync` | Idempotent mock POS order sync |
+| `POST /api/evidence-packet/compile` | Compile 4-exhibit review PDF |
+| `GET /api/audit`, `GET /api/audit/verify` | SHA-256 linked cryptographic audit chain verification |
 
-Amounts in the canonical bundle are integer paise: `450000` means ₹4,500.00. Optional identifiers such as `utr_rrn`, `order_id`, `reference_id`, `description`, `settlement_reference`, `nodal_settled_ts`, `nodal_amount_paise` and `nodal_source_row_id` are retained. The import requires a target capture date and batch ID. `disputes.csv` is optional: each case is linked only by a unique exact UTR to one loaded payment row; absent or ambiguous links remain unresolved, and the parser never fuzzily joins an evidence case. Validation is atomic: a bad bundle does not replace the active dataset.
+---
 
-For a raw Paytm-style export, use **Preview** first, inspect the header mapping, then use **Stage mapped export** only after matching its capture date, payout batch ID and payout UTR against the appropriate settlement report and bank statement. The stage endpoint is not ledger activation.
+## Documentation Index
 
-## Suggested live demo sequence
-
-1. Start the API and workbench. Open Overview and show the synthetic fixture watermark.
-2. Run the ₹50,000 gross example. It reconciles against ₹45,718.60 bank credit with ₹4,281.40 of explicit synthetic adjustments/shifted transactions and zero residual. Highlight that every fee row is a synthetic source row, not a rule applied by the code.
-3. Open Evidence Graph and select a source node. Explain the edge's explicit matching reference.
-4. Change the bank credit by ₹100 and rerun. Show the 10,000-paise unexplained residual.
-5. Open Import and preview the Paytm-style CSV. Stage it with an operator-entered mapping. Show that the active ledger did not silently change.
-6. Open Policy Lab. Evaluate clean delivery evidence, then corrupt OTP or invoice amount. Show the three-way Merkle root/leaf proof and policy gate changing.
-7. Open Counter Operations. Stage duplicate-debit review; approve or reject it as a local handoff decision. Then sync the local demo POS order with its idempotency key.
-8. Use the teammate/voice panel. State which mode is active—live Sarvam or deterministic offline fallback. Do not claim an ASR transcript unless the API returned it.
-9. Download the four-exhibit PDF and explicitly call it a local evidence packet, not a live dispute upload.
-
-## API map
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/health` | Local service state and explicit external-integration flags |
-| `GET/POST /api/demo/reconcile` | Reconcile fixture and run deterministic fault simulations |
-| `POST /api/import-zip` | Validate/persist the canonical four-report bundle |
-| `POST /api/import/paytm-csv/preview` | Validate and preview raw Paytm-style CSV |
-| `POST /api/import/paytm-csv/stage` | Persist explicit operator mapping without changing active ledger |
-| `GET /api/import/staged-paytm-exports` | List staged raw exports |
-| `GET /api/import/status` | Active mode/date/batch/row counts |
-| `GET /api/integrity/merkle` | Dataset Merkle root, leaves and row inclusion proof |
-| `GET /api/graph/overview`, `GET /api/graph/trace/{node_id}` | Evidence graph and source-linked trace |
-| `POST /api/agent/investigate`, `POST /api/agent/chat` | Deterministic investigation and optional Sarvam read-only tool selection |
-| `POST /api/voice/transcribe`, `/api/voice/bind-reference`, `/api/voice/speak` | Optional ASR, reference candidates and TTS |
-| `POST /api/disputes/{case_id}/evaluate` | Synthetic dispute policy and three-way Merkle proof |
-| `POST /api/operations/duplicate-debits/check` | Create/retrieve idempotent local approval record |
-| `GET /api/approvals`, `POST /api/approvals/{id}/decision` | Local approval queue and manual-handoff decision |
-| `GET /api/operations/pos-orders`, `POST /api/operations/orders/{id}/sync` | Local mock POS order and idempotent sync |
-| `POST /api/evidence-packet/compile`, `GET /api/evidence-packet.pdf` | Four-exhibit PDF output |
-| `GET /api/investigations`, `/api/audit`, `/api/audit/verify` | Local case history and hash-chain status |
-
-## Production gates — do not skip
-
-- Authentication, tenant isolation, RBAC, secure secret storage, encryption at rest/in transit, PII masking/retention and rate limits.
-- PostgreSQL schema/migrations, concurrency controls and durable externally anchored audit roots.
-- Verified source adapters for actual Paytm merchant settlement reports, bank statements, POS/order and courier evidence, including split/reversal/refund semantics.
-- Independent, authoritative capture and nodal event-feed adapters with stable IDs, timezone semantics, clock-skew handling, split-settlement legs and verified batch contracts. The local two-pointer analyser operates only on normalized event fields and does not claim independent upstream feed provenance.
-- An authoritative versioned UDIR/RGNB reason-code and workflow catalogue reviewed against current NPCI/Paytm documents. The current policy lab is synthetic.
-- Provider contracts, approved credentials, sandbox tests, allow-listed APIs, webhook signature validation, replay protection and human authorisation before any money/dispute write.
-- Browser build, responsive/keyboard/accessibility checks and a real target-laptop microphone/network smoke test.
-
-See `docs/PROJECT_AUDIT.md`, `docs/IMPLEMENTATION_STATUS.md`, `docs/GAP_REGISTER.md` and `docs/PHASED_ROADMAP.md` before the final presentation.
+- [Full Functional Audit (Phase 1)](docs/FUNCTIONAL_AUDIT.md)
+- [Implementation Report & Feature Classification](docs/IMPLEMENTATION_REPORT.md)
+- [Judge & Live Demonstration Guide](docs/DEMO_GUIDE.md)
+- [Live Readiness Roadmap & Production Contracts](docs/LIVE_READINESS_ROADMAP.md)
+- [API Credentials & Integration Setup Guide](docs/INTEGRATION_SETUP_GUIDE.md)

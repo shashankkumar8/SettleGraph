@@ -1,20 +1,19 @@
 # Implementation status — 31 October 2026
 
-## Release and source merge
+## Current project release
 
-- Current merged code line: **0.5.0**.
-- Core baseline: the prior GOAT build's stronger Paytm-aligned reconciliation/evidence/import/voice code.
-- Separate v4 contribution: Vendor & Exceptions Desk integrated as a sixth workbench section, with PO/GRN/invoice review, dated vendor receivable fixture, MSME timeline aid, UPI TAT scenarios, Kirana payout fixture, duplicate-capture review and deterministic Hinglish intent router.
-- The full merge decision and what was deliberately not copied from v4 are recorded in `V4_FEATURE_AUDIT.md`.
+- Current development version: **0.5.2**. Treat this directory as the only active project tree; do not switch between prior GOAT, v4 or Final folders during development.
+- The six-section workbench already contains settlement reconciliation, evidence graph, policy lab, vendor exceptions, counter operations, and investigations/audit.
+- The historical v4 feature review is retained in `V4_FEATURE_AUDIT.md` for provenance; no additional branch merge is part of this release.
 
 ## Local verification completed in this handoff
 
-- Backend regression suite: **107 pytest tests passed** after the v4 merge and as-of-date/duplicate-cluster hardening.
+- Backend regression suite: **114 pytest tests passed** after the v4 merge and as-of-date/duplicate-cluster hardening.
 - Python compile check: `python -m compileall -q backend` passed.
 - Frontend source syntax transpilation: TypeScript 5.8.3 `transpileModule` reported zero syntax diagnostics for `App.tsx`, `VendorTab.tsx` and `main.tsx`. This is not a full type-check or bundler build.
 - FastAPI TestClient smoke checks: `/api/health`, `/api/duplicates`, `/api/exceptions`, `/api/scenarios/kirana-payout`, `/api/scenarios/pending-success` and the vendor receivables `POST` route returned expected responses.
 - Duplicate candidate review endpoint returned a local `PENDING_HUMAN_APPROVAL` record with `refund_api_called: false` and `external_action_executed: false`.
-- Health route reports version `0.5.0`, synthetic mode and `false` for live Paytm/bank/POS/courier connections, external money movement and external dispute submission.
+- Health route reports version `0.5.2`, synthetic mode and `false` for live Paytm/bank/POS/courier connections, external money movement and external dispute submission.
 - API manual smoke was against the local built-in synthetic fixture. It did not contact a provider.
 
 ## Main synthetic reconciliation fixture
@@ -37,6 +36,15 @@ All rates and adjustments in this demo are fixture rows, not Paytm-wide fee assu
 - RBI UPI TAT view differentiates two named failure categories, P2M T+5 and P2P T+1. Its ₹100/day amount is only a potential scenario calculation; the system does not establish whether the transaction meets every condition or whether compensation was actually paid.
 - Vendor follow-up and duplicate-capture buttons stage local human-approval records only. No email/WhatsApp/ERP notice, refund or money movement is performed.
 - Kirana payout example is a synthetic ₹80,000 / ₹76,500 example with ₹1,000 intentionally unexplained. It does not guess a fee category.
+
+## v0.5.2 hardening in this pass
+
+- Added bounded chunked upload reads for ZIP/CSV/audio before in-memory processing; oversized requests stop at the configured size rather than being fully buffered first.
+- Added an integrations-status API that exposes configuration presence and required next steps without returning secrets or pretending that a configured key is a tested connection.
+- Added an Integration Readiness section in the workbench so Sarvam, Paytm, bank, POS, courier and Vendor ERP state is visible to the operator.
+- Tightened CORS origin parsing: explicit HTTP(S) origins only, no wildcard, no path/query/fragment and no duplicate origins.
+- Updated `verify_project.ps1`: it returns an incomplete/failure exit code when the frontend build is skipped instead of printing a misleading all-clear.
+- Pinned direct frontend dependency versions and added an explicit `typecheck` step to the production build command.
 
 ## Frontend status and target-machine verification
 
@@ -72,9 +80,9 @@ All rates and adjustments in this demo are fixture rows, not Paytm-wide fee assu
 2. Start the backend with `.\start_backend.ps1` from the project root.
 3. Start the frontend with `.\start_frontend.ps1` after npm dependencies install successfully.
 4. Run `npm install` and `npm run build` inside `frontend`.
-5. Run `python -m pytest -q` in `backend` and confirm **107 passed**.
+5. Run `python -m pytest -q` in `backend` and confirm **114 passed**.
 6. Verify `/api/health` says local synthetic mode and all live provider/write flags are false.
 7. Test each of the six sections, ZIP import, cutoff view, Break-the-Case, duplicate review, local POS sync, Vendor Desk, TAT examples and PDF download.
 8. Configure Sarvam only on the backend and demonstrate live mode only after a successful real call; otherwise explain the offline fallback honestly.
 
-See `LIVE_READINESS_ROADMAP.md` for the full clean-start checklist and production gates.
+See `LIVE_READINESS_ROADMAP.md` for the full clean-start checklist and production gates. See `INTEGRATION_SETUP_GUIDE.md` for exact credentials, permissions, API contracts and connector acceptance gates.

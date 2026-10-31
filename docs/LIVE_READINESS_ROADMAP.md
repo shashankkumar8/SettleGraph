@@ -1,7 +1,7 @@
 # SettleGraph — live-readiness roadmap
 
 **Status date:** 31 October 2026  
-**Current release:** 0.5.0 merged build  
+**Current release:** 0.5.2 merged build  
 **Product scope:** Paytm-aligned merchant payout, evidence and counter-operations core, with Vendor & Exceptions Desk as an adjacent extension.
 
 This roadmap separates the locally working prototype from a genuinely connected product. “Live” means authorised merchant source systems are securely connected, data is current and traceable, results are reconciled against independent evidence, and every external action is authorised and acknowledged by its provider. A running React page or API returning HTTP 200 is not enough.
@@ -55,7 +55,7 @@ Then run:
 .\verify_project.ps1
 ```
 
-Expected backend result in this handoff: **107 pytest tests passed**. Frontend source syntax transpilation passes, but a complete npm type-check/Vite build and browser walk-through remain unverified until completed on the target machine with npm registry access.
+Expected backend result in this handoff: **111 pytest tests passed**. Frontend source syntax transpilation passes, but a complete npm type-check/Vite build and browser walk-through remain unverified until completed on the target machine with npm registry access.
 
 ### Browser checklist
 
@@ -260,3 +260,6 @@ These are reference starting points, not a substitute for checking the current e
 - India Code, Micro, Small and Medium Enterprises Development Act, 2006 — sections 2(b), 15 and 16: <https://www.indiacode.nic.in/bitstream/123456789/5872/1/a2006-27.pdf>
 - Ministry MSEFC scheme guidelines — eligibility scope for the delayed-payment mechanism: <https://ramp.msme.gov.in/ramp/pdf-documents/scheme-guidelines/msefc.pdf>
 - Sarvam official API docs — verify current Saaras, Bulbul and Chat API request/response fields, supported limits and model entitlements at implementation time: <https://docs.sarvam.ai/>
+
+
+For actual credentials, provider access requirements, endpoint setup and integration acceptance criteria, read `docs/INTEGRATION_SETUP_GUIDE.md`.

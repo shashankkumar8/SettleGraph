@@ -145,3 +145,111 @@ def test_investigation_is_persisted_and_has_audit_event():
     assert any(row["id"] == investigation_id for row in saved)
     audit = client.get("/api/audit").json()
     assert any(row["event_type"] == "INVESTIGATION_CREATED" and f"{investigation_id}" in row["detail"] for row in audit)
+
+
+def test_integration_status_is_honest_and_never_exposes_secret_material():
+    response = client.get('/api/integrations/status')
+    assert response.status_code == 200
+    body = response.json()
+    assert body['mode'] == 'LOCAL_DEMO_ONLY'
+    assert body['paytm']['connected'] is False
+    assert body['bank']['connected'] is False
+    assert body['external_money_movement_enabled'] is False
+    assert body['external_dispute_submission_enabled'] is False
+    serialized = str(body).lower()
+    assert 'sarvam_api_key' not in serialized
+    assert 'api-subscription-key' not in serialized
+
+
+def test_import_zip_enforces_upload_limit_before_processing():
+    too_large = b'0' * (10 * 1024 * 1024 + 1)
+    response = client.post(
+        '/api/import-zip',
+        files={'file': ('oversized.zip', too_large, 'application/zip')},
+    )
+    assert response.status_code == 413
+    assert '10 MB' in response.json()['detail']
+
+
+def test_paytm_csv_preview_enforces_upload_limit():
+    too_large = b'a' * (5 * 1024 * 1024 + 1)
+    response = client.post(
+        '/api/import/paytm-csv/preview',
+        files={'file': ('oversized.csv', too_large, 'text/csv')},
+    )
+    assert response.status_code == 413
+    assert '5 MB' in response.json()['detail']
+
+
+def test_voice_upload_enforces_size_limit_even_when_sarvam_is_not_configured():
+    too_large = b'a' * (10 * 1024 * 1024 + 1)
+    response = client.post(
+        '/api/voice/transcribe',
+        files={'file': ('oversized.wav', too_large, 'audio/wav')},
+    )
+    assert response.status_code == 413
+    assert '10 MB' in response.json()['detail']
+
+
+def test_cors_parser_accepts_only_bare_explicit_origins(monkeypatch):
+    monkeypatch.setenv('SETTLEGRAPH_CORS_ORIGINS', 'http://localhost:5173,https://workbench.example.com')
+    assert main._configured_cors_origins() == [
+        'http://localhost:5173',
+        'https://workbench.example.com',
+    ]
+
+
+def test_cors_parser_rejects_wildcard_and_url_paths(monkeypatch):
+    monkeypatch.setenv('SETTLEGRAPH_CORS_ORIGINS', '*')
+    try:
+        main._configured_cors_origins()
+    except RuntimeError as exc:
+        assert 'wildcard' in str(exc)
+    else:
+        raise AssertionError('Wildcard CORS origin should be rejected')
+
+    monkeypatch.setenv('SETTLEGRAPH_CORS_ORIGINS', 'https://example.com/app')
+    try:
+        main._configured_cors_origins()
+    except RuntimeError as exc:
+        assert 'without a path' in str(exc)
+    else:
+        raise AssertionError('CORS URL path should be rejected')
+
+
+def test_cors_parser_rejects_duplicate_origins(monkeypatch):
+    monkeypatch.setenv('SETTLEGRAPH_CORS_ORIGINS', 'https://example.com,https://example.com')
+    try:
+        main._configured_cors_origins()
+    except RuntimeError as exc:
+        assert 'duplicate' in str(exc)
+    else:
+        raise AssertionError('Duplicate CORS origins should be rejected')
+
+
+def test_sarvam_live_test_is_opt_in_and_reports_each_component(monkeypatch):
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key-not-a-real-secret")
+    monkeypatch.setattr(main, "sarvam_chat_completion", lambda messages, tools: {"model": "sarvam-105b", "choices": [{"message": {"content": "OK"}}]})
+    monkeypatch.setattr(main, "synthesize_speech", lambda text, language_code: b"RIFF" + b"0" * 80)
+    response = client.post("/api/integrations/sarvam/test", json={"test_chat": True, "test_tts": True})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ok"] is True
+    assert body["tests"]["chat"]["ok"] is True
+    assert body["tests"]["tts"]["ok"] is True
+    assert body["external_financial_actions_enabled"] is False
+    status = client.get("/api/integrations/status").json()["sarvam"]
+    assert status["checks"]["chat"]["status"] == "PASS"
+    assert status["checks"]["tts"]["status"] == "PASS"
+
+
+def test_sarvam_live_test_refuses_to_run_without_key(monkeypatch):
+    monkeypatch.delenv("SARVAM_API_KEY", raising=False)
+    response = client.post("/api/integrations/sarvam/test", json={"test_chat": True, "test_tts": False})
+    assert response.status_code == 503
+
+
+def test_sarvam_live_test_rejects_no_selected_components(monkeypatch):
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key-not-a-real-secret")
+    response = client.post("/api/integrations/sarvam/test", json={"test_chat": False, "test_tts": False})
+    assert response.status_code == 400

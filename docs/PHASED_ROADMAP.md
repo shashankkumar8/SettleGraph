@@ -277,3 +277,6 @@ Exit criteria:
 ## Separate v4 branch merge
 
 The independent `SettleGraph_Team_Aliens_v4.zip` contributed the Vendor & Exceptions Desk. Its valuable PO/GRN/invoice, outstanding, TAT, Kirana payout and exception-inbox flows are integrated into `backend/vendor.py`, vendor routes in `backend/main.py`, `frontend/src/VendorTab.tsx` and `backend/tests/test_vendor.py`. The v4 archive was not used as the base because it did not retain all the GOAT settlement/import/evidence/voice hardening. Read `V4_FEATURE_AUDIT.md` for the feature-by-feature decision and `LIVE_READINESS_ROADMAP.md` for the fully connected production plan.
+
+
+For actual credentials, provider access requirements, endpoint setup and integration acceptance criteria, read `docs/INTEGRATION_SETUP_GUIDE.md`.
