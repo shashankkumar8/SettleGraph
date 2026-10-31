@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: settlegraph-api-shashank
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: CORS_ORIGINS
+        value: https://settlegraph-frontend-shashank.onrender.com
+  - type: web
+    name: settlegraph-frontend-shashank
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    autoDeployTrigger: commit
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://settlegraph-api-shashank.onrender.com/api
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
