@@ -8,7 +8,7 @@ import {
   ClipboardList, CreditCard, Check, Radio, StopCircle,
 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/+$/, '')
+const API = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://settlegraph-api-shashank.onrender.com/api' : '/api')).replace(/\/+$/, '')
 type Tab = 'reconcile' | 'evidence' | 'safety' | 'vendor' | 'operations' | 'audit'
 type AnyObj = Record<string, any>
 type SimOptions = {
@@ -530,7 +530,7 @@ export default function App() {
   }), [transactions, transactionSearch])
 
   if (loading) return <div className="startup"><LoaderCircle className="spin" size={28} /><p>Loading reconciliation engine…</p></div>
-  if (!health?.ok) return <div className="startup startup-error"><div className="startup-error-icon"><AlertTriangle size={25} /></div><h1>Workbench could not reach the local engine</h1><p>{error || 'The API health check did not succeed. Start the backend and retry.'}</p><code>Backend: http://127.0.0.1:8000 · API: {API}</code><button className="primary-button" onClick={() => void loadAll()}><RefreshCw size={15} /> Retry connection</button><small>Start <code>start_backend.ps1</code> in the project root, then refresh this screen.</small></div>
+  if (!health?.ok) return <div className="startup startup-error"><div className="startup-error-icon"><AlertTriangle size={25} /></div><h1>Workbench could not reach the API</h1><p>{error || 'The API health check did not succeed. Check the backend deployment and retry.'}</p><code>API endpoint: {API}</code><button className="primary-button" onClick={() => void loadAll()}><RefreshCw size={15} /> Retry connection</button><small>For the hosted demo, confirm the Render API service is deployed and reachable.</small></div>
 
   return (
     <div className="app-shell">
