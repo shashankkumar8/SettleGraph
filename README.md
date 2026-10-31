@@ -32,7 +32,7 @@ SettleGraph connects merchant-side payment, payout batch, MDR fee adjustment, ba
 | **Render Web App** | Production Static Site | **[settlegraph-frontend-shashank.onrender.com](https://settlegraph-frontend-shashank.onrender.com)** | Hosted on Render CDN, connected to Render API |
 | **Render API Service** | Production Web Service | **[settlegraph-api-shashank.onrender.com](https://settlegraph-api-shashank.onrender.com)** | FastAPI backend running on Python 3.11 |
 | **Render Health Check** | API Verification | **[settlegraph-api-shashank.onrender.com/api/health](https://settlegraph-api-shashank.onrender.com/api/health)** | Returns `{"ok": true, "version": "0.6.0"}` |
-| **Cloudflare Edge Tunnel** | Instant Live Mirror | **[exclusively-arbitration-antibody-gasoline.trycloudflare.com](https://exclusively-arbitration-antibody-gasoline.trycloudflare.com)** | Single-port local tunnel on Cloudflare Global Edge |
+| **Cloudflare Edge Tunnel** | Instant Live Mirror | **[sussex-seen-sales-trans.trycloudflare.com](https://sussex-seen-sales-trans.trycloudflare.com)** | Single-port local tunnel on Cloudflare Global Edge |
 | **Local Machine** | Native Localhost | **[http://127.0.0.1:8000](http://127.0.0.1:8000)** | Full-stack FastAPI + React SPA on port 8000 |
 
 ---
