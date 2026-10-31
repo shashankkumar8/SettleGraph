@@ -1,0 +1,7 @@
+adjustment_id,source_row_id,type,amount_paise,direction,batch_id,reference_id,description
+ADJ-MDR-01,SET-ROW-0001,MDR,9000,DEBIT,BATCH-2026-10-27,PTM-TXN-1139,Synthetic example MDR row
+ADJ-GST-01,SET-ROW-0002,GST_ON_MDR,1620,DEBIT,BATCH-2026-10-27,ADJ-MDR-01,Synthetic GST row linked to MDR
+ADJ-SWITCH-01,SET-ROW-0003,SWITCH_FEE,20,DEBIT,BATCH-2026-10-27,PTM-TXN-1139,Synthetic example switch-fee row; not a universal Paytm rule
+ADJ-EDI-01,SET-ROW-0004,LOAN_EDI,120000,DEBIT,BATCH-2026-10-27,LOAN-9921,Synthetic merchant loan EDI row
+ADJ-RNT-02,SET-ROW-0005,SOUNDBOX_RENTAL,12500,DEBIT,BATCH-2026-10-27,SBX-DEV-4410,Synthetic Soundbox rental row
+ADJ-HLD-03,SET-ROW-0006,UDIR_HOLD,100000,DEBIT,BATCH-2026-10-27,DSP-2048,Synthetic dispute-hold row

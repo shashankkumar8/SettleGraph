@@ -1,0 +1,2 @@
+bank_row_id,batch_id,transfer_utr,credit_paise,credit_date,source_file
+BANK-ROW-0001,BATCH-2026-10-27,PAYTM-NODAL-20261027-UTR-DEMO,4571860,2026-10-27,synthetic_bank_statement.csv

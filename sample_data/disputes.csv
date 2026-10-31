@@ -1,0 +1,3 @@
+case_id,disputed_paise,utr_rrn,order_id,order_status,invoice_amount_paise,invoice_source_row_id,awb,courier_status,otp_verified,courier_source_row_id,description,reason_code,source_row_id
+DSP-DEMO-2049,450000,629810445566,ORD-8939,DELIVERED,450000,POS-INVOICE-8939,DLV-DEMO-992104,DELIVERED,True,COURIER-DELIVERY-8939,Synthetic delivery dispute with a source-linked nodal payment and matching POS/courier fixture evidence.,,
+DSP-DEMO-2052,85000,629811001992,ORD-5512,DELIVERED,85000,POS-INVOICE-5512,LOCAL-PICKUP-DEMO,DELIVERED,True,COURIER-PICKUP-5512,"Synthetic duplicate-payment review case; the duplicate is detected from two loaded payment rows, not from this case ID.",,

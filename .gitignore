@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+backend/.venv/
+backend/settlegraph.db
+frontend/node_modules/
+frontend/dist/
+.env
+**/.env
+*.sqlite3
+frontend/tsconfig.tsbuildinfo
