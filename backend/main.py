@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import csv
 import json
+import os
 import zipfile
 from datetime import date, datetime, timezone
 from copy import deepcopy
@@ -26,9 +27,17 @@ from sarvam_service import api_key as sarvam_api_key, chat_completion as sarvam_
 import vendor
 
 app = FastAPI(title="SettleGraph Merchant Operations Workbench", version="0.5.0", description="Evidence-first merchant-operations prototype. Built-in data is synthetic; external provider actions are disabled.")
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
