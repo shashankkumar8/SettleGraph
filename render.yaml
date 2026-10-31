@@ -17,9 +17,8 @@ services:
   - type: web
     name: settlegraph-frontend-shashank
     runtime: static
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: ./dist
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
     autoDeployTrigger: commit
     envVars:
       - key: VITE_API_BASE_URL
