@@ -232,7 +232,7 @@ def calculate(options: SimulationOptions | None = None) -> tuple[dict[str, Any],
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "service": "SettleGraph Merchant Operations Workbench", "version": "0.5.3", "mode": ACTIVE_SOURCE_MODE, "demo_mode": True, "live_paytm_connected": False, "live_bank_connected": False, "live_pos_connected": False, "live_courier_connected": False, "external_money_movement_enabled": False, "external_dispute_submission_enabled": False, "vendor_receivables_source": "SYNTHETIC_FIXTURE_ONLY", "cutoff_event_analysis_available": bool(analyse_cutoff_events(ACTIVE_DATASET["transactions"])["available"]), "sarvam_configured": sarvam_is_configured()}
+    return {"ok": True, "service": "SettleGraph Merchant Operations Workbench", "version": "0.6.0", "mode": ACTIVE_SOURCE_MODE, "demo_mode": True, "live_paytm_connected": False, "live_bank_connected": False, "live_pos_connected": False, "live_courier_connected": False, "external_money_movement_enabled": False, "external_dispute_submission_enabled": False, "vendor_receivables_source": "SYNTHETIC_FIXTURE_ONLY", "cutoff_event_analysis_available": bool(analyse_cutoff_events(ACTIVE_DATASET["transactions"])["available"]), "sarvam_configured": sarvam_is_configured()}
 
 
 @app.post("/api/integrations/sarvam/test")
