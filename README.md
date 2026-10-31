@@ -67,6 +67,19 @@ The selected deck is the product contract, but a hackathon prototype must not pr
 
 These deltas are listed in `docs/PROJECT_AUDIT.md` and `docs/GAP_REGISTER.md`; they are not hidden.
 
+## Live demo deployment (Render)
+
+The project is deployed as two Render services:
+
+- **Frontend:** [SettleGraph Web App](https://settlegraph-frontend-shashank.onrender.com)
+- **Backend API:** [SettleGraph API](https://settlegraph-api-shashank.onrender.com)
+- **API health endpoint:** [\u002fapi/health](https://settlegraph-api-shashank.onrender.com/api/health)
+- **Render Blueprint:** [render.yaml](render.yaml)
+
+The frontend is a React/Vite static site. The backend is a FastAPI web service. The frontend is configured to call the backend through `VITE_API_BASE_URL`, and backend CORS is configured through the `CORS_ORIGINS` environment variable in the Blueprint.
+
+**Deployment limitations:** the backend currently uses SQLite on Render's free service filesystem. Render's free instance filesystem is ephemeral, so uploaded datasets, local approvals and history must not be treated as durable and may be lost when the service restarts or redeploys. The free web service may also spin down after inactivity, causing a delay on the first request. The app remains a synthetic-data prototype; deployment does not add live Paytm, bank, NPCI, POS or courier integrations, nor does it enable real refunds or dispute submissions.
+
 ## Windows quick start
 
 Prerequisites: Python 3.11+ and Node.js 20+. Internet is needed for the first dependency installs.
