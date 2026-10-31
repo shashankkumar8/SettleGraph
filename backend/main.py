@@ -39,7 +39,7 @@ def _configured_cors_origins() -> list[str]:
         "SETTLEGRAPH_CORS_ORIGINS",
         os.getenv(
             "CORS_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,https://settlegraph-frontend-shashank.onrender.com",
+            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000,https://settlegraph-frontend-shashank.onrender.com,http://settlegraph-frontend-shashank.onrender.com",
         ),
     )
     origins = [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
@@ -60,8 +60,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_configured_cors_origins(),
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Idempotency-Key"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 init_db()
 

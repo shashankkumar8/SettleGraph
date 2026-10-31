@@ -165,6 +165,8 @@ export default function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaChunksRef = useRef<BlobPart[]>([])
   const mediaStreamRef = useRef<MediaStream | null>(null)
+  const retryTimerRef = useRef<number | null>(null)
+  const retryCountRef = useRef(0)
 
   const request = useCallback(async (path: string, init?: RequestInit) => {
     const res = await fetch(`${API}${path}`, init)
@@ -221,8 +223,16 @@ export default function App() {
       } else {
         setActiveScenario('B')
       }
+      retryCountRef.current = 0
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not connect to the backend API')
+      const errMsg = e instanceof Error ? e.message : 'Could not connect to the backend API'
+      setError(errMsg)
+      if (retryCountRef.current < 4) {
+        retryCountRef.current += 1
+        retryTimerRef.current = window.setTimeout(() => {
+          void loadAll()
+        }, 2500)
+      }
     } finally {
       setLoading(false)
     }
@@ -835,21 +845,26 @@ export default function App() {
       <div className="startup">
         <LoaderCircle className="spin" size={32} />
         <p>Initializing SettleGraph Merchant Workspace v0.6...</p>
+        {retryCountRef.current > 0 && (
+          <small style={{ marginTop: '8px', color: '#64748b' }}>
+            Connecting to cloud API (attempt {retryCountRef.current}/4, waking up free instance)...
+          </small>
+        )}
       </div>
     )
   }
 
-  if (loading) return <div className="startup"><LoaderCircle className="spin" size={28} /><p>Loading reconciliation engine…</p></div>
-  if (!health?.ok) return <div className="startup startup-error"><div className="startup-error-icon"><AlertTriangle size={25} /></div><h1>Workbench could not reach the API</h1><p>{error || 'The API health check did not succeed. Check the backend deployment and retry.'}</p><code>API endpoint: {API}</code><button className="primary-button" onClick={() => void loadAll()}><RefreshCw size={15} /> Retry connection</button><small>For the hosted demo, confirm the Render API service is deployed and reachable.</small></div>
   if (!health?.ok) {
     return (
       <div className="startup startup-error">
         <div className="startup-error-icon"><AlertTriangle size={28} /></div>
         <h1>Workbench could not reach the API</h1>
-        <p>{error || 'The API health check did not succeed. Start the backend and retry.'}</p>
-        <code>Backend: http://127.0.0.1:8000 · API: {API}</code>
-        <button className="primary-button" onClick={() => void loadAll()}><RefreshCw size={15} /> Retry connection</button>
-        <small>Run <code>start_backend.ps1</code> locally, or confirm the Render API service is reachable.</small>
+        <p>{error || 'The API health check did not succeed. Check the backend deployment and retry.'}</p>
+        <code>API endpoint: {API}</code>
+        <button className="primary-button" onClick={() => { retryCountRef.current = 0; void loadAll(); }}>
+          <RefreshCw size={15} /> Retry connection
+        </button>
+        <small>Render free tier web services spin down after inactivity and take ~30–45s to wake up on the first request. The system will auto-retry, or click Retry connection once the service has spun up.</small>
       </div>
     )
   }

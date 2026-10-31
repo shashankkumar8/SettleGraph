@@ -277,7 +277,7 @@ def test_tat_reversal_cannot_be_in_the_future_relative_to_evaluation():
 
 def test_health_endpoint_reports_demo_and_live_integration_boundaries():
     health = client.get("/api/health").json()
-    assert health["version"] == "0.5.3"
+    assert health["version"] == "0.6.0"
     assert health["demo_mode"] is True
     assert health["live_paytm_connected"] is False
     assert health["live_bank_connected"] is False

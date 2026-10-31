@@ -13,7 +13,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.11
       - key: CORS_ORIGINS
-        value: https://settlegraph-frontend-shashank.onrender.com
+        value: https://settlegraph-frontend-shashank.onrender.com,http://settlegraph-frontend-shashank.onrender.com
   - type: web
     name: settlegraph-frontend-shashank
     runtime: static
